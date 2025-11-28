@@ -90,23 +90,25 @@ def _update_active_instance(db: Session, today: date) -> None:
     if any(instance.status == "paused" for instance in instances):
         return
 
+    # Choose an active instance only if "now" is within its planned window.
     active_candidate = None
     for instance in instances:
-        if instance.planned_start_time <= current_time:
+        if instance.planned_start_time <= current_time < instance.planned_end_time:
             active_candidate = instance
-        else:
+            break
+        if instance.planned_start_time > current_time:
             break
 
-    # Reset to pending first (non-cancelled/non-paused)
+    # Reset to pending first (non-cancelled/non-paused), except the active one.
     for instance in instances:
         if instance.status == "paused":
             continue
-        instance.status = "pending"
-
-    if active_candidate is not None:
-        active_candidate.status = "active"
-        if active_candidate.actual_start_time is None:
-            active_candidate.actual_start_time = now
+        if active_candidate is not None and instance.id == active_candidate.id:
+            instance.status = "active"
+            if instance.actual_start_time is None:
+                instance.actual_start_time = now
+        else:
+            instance.status = "pending"
 
     db.commit()
 
@@ -153,9 +155,48 @@ def get_today_schedule(db: Session = Depends(get_db)):
             cursor += timedelta(minutes=task.default_duration_minutes)
 
         db.commit()
+    else:
+        # Top up today's schedule with any newly added enabled tasks that don't yet have
+        # an instance for today. This makes it easier to test new templates without
+        # needing a full regenerate.
+        existing_task_ids = {instance.task_id for instance in existing}
+        tasks = (
+            db.query(models.Task)
+            .filter(models.Task.enabled.is_(True))
+            .order_by(models.Task.name)
+            .all()
+        )
+        if tasks:
+            # Start new tasks after the last planned end time (if any), otherwise 09:00.
+            if existing:
+                last_end_time = max(inst.planned_end_time for inst in existing)
+                cursor = datetime.combine(today, last_end_time)
+            else:
+                cursor = datetime.combine(today, time(hour=9, minute=0))
 
-    # Update which instance is currently active based on time
-    _update_active_instance(db, today)
+            created_any = False
+            for task in tasks:
+                if not _task_applies_today(task, today):
+                    continue
+                if task.id in existing_task_ids:
+                    continue
+
+                planned_start = cursor.time()
+                planned_end = (cursor + timedelta(minutes=task.default_duration_minutes)).time()
+
+                instance = models.ScheduleInstance(
+                    task_id=task.id,
+                    date=today,
+                    planned_start_time=planned_start,
+                    planned_end_time=planned_end,
+                    status="pending",
+                )
+                db.add(instance)
+                cursor += timedelta(minutes=task.default_duration_minutes)
+                created_any = True
+
+            if created_any:
+                db.commit()
 
     cutoff = datetime.utcnow() - timedelta(minutes=10)
     stale = (
@@ -181,10 +222,22 @@ def get_today_schedule(db: Session = Depends(get_db)):
     )
 
     now = datetime.now()
+    current_time = now.time()
     result: List[schemas.TodayScheduleItem] = []
     for instance, task in rows:
+        # Derive effective status from current time for non-cancelled/non-paused tasks.
+        effective_status = instance.status
+        if effective_status not in ("cancelled", "paused"):
+            if instance.planned_start_time <= current_time < instance.planned_end_time:
+                effective_status = "active"
+            else:
+                effective_status = "pending"
+
+        # Treat tasks created via /adhoc-today (enabled = False) as ad-hoc for display.
+        is_adhoc = not bool(task.enabled)
+
         remaining_seconds = None
-        if instance.status in ("active", "paused"):
+        if effective_status in ("active", "paused"):
             end_dt = datetime.combine(instance.date, instance.planned_end_time)
             delta = (end_dt - now).total_seconds()
             remaining_seconds = max(0, int(delta))
@@ -198,11 +251,85 @@ def get_today_schedule(db: Session = Depends(get_db)):
                 date=instance.date,
                 planned_start_time=instance.planned_start_time,
                 planned_end_time=instance.planned_end_time,
-                status=instance.status,
+                status=effective_status,
                 remaining_seconds=remaining_seconds,
+                server_now=now,
+                is_adhoc=is_adhoc,
             )
         )
     return result
+
+
+@router.post("/adhoc-today", response_model=schemas.TodayScheduleItem)
+def create_adhoc_today_task(
+    payload: schemas.AdhocTodayTaskCreate,
+    db: Session = Depends(get_db),
+):
+    """Create a one-off task instance directly in today's schedule (PA-004 extension)."""
+
+    today = date.today()
+
+    if payload.duration_minutes <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Duration must be positive",
+        )
+
+    name = (payload.name or "").strip()
+    category = (payload.category or "").strip() or "misc"
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name is required",
+        )
+
+    # Create a disabled template to back this one-off instance, so it doesn't
+    # automatically appear on future days but can be reused later if desired.
+    task = models.Task(
+        name=name,
+        category=category,
+        default_duration_minutes=payload.duration_minutes,
+        recurrence_pattern=None,
+        preferred_time_window=None,
+        default_alert_style="visual_then_alarm",
+        enabled=False,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    start_dt = datetime.combine(today, payload.start_time)
+    end_dt = start_dt + timedelta(minutes=payload.duration_minutes)
+
+    instance = models.ScheduleInstance(
+        task_id=task.id,
+        date=today,
+        planned_start_time=payload.start_time,
+        planned_end_time=end_dt.time(),
+        status="pending",
+    )
+    db.add(instance)
+    db.commit()
+    db.refresh(instance)
+
+    remaining_seconds = None
+    if instance.status in ("active", "paused"):
+        now = datetime.now()
+        end_dt2 = datetime.combine(instance.date, instance.planned_end_time)
+        delta2 = (end_dt2 - now).total_seconds()
+        remaining_seconds = max(0, int(delta2))
+
+    return schemas.TodayScheduleItem(
+        id=instance.id,
+        task_id=instance.task_id,
+        task_name=task.name,
+        category=task.category,
+        date=instance.date,
+        planned_start_time=instance.planned_start_time,
+        planned_end_time=instance.planned_end_time,
+        status=instance.status,
+        remaining_seconds=remaining_seconds,
+    )
 
 
 @router.put("/instances/{instance_id}", response_model=schemas.TodayScheduleItem)
@@ -259,6 +386,53 @@ def update_schedule_instance(
         status=instance.status,
         remaining_seconds=remaining_seconds,
     )
+
+
+@router.get("/interactions/recent", response_model=List[schemas.InteractionHistoryItem])
+def get_recent_interactions(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """Return recent interaction history for alerts (PA-014)."""
+
+    # Clamp limit to a reasonable range
+    if limit <= 0:
+        limit = 1
+    if limit > 200:
+        limit = 200
+
+    rows = (
+        db.query(models.Interaction, models.ScheduleInstance, models.Task)
+        .join(
+            models.ScheduleInstance,
+            models.Interaction.schedule_instance_id == models.ScheduleInstance.id,
+        )
+        .join(models.Task, models.ScheduleInstance.task_id == models.Task.id)
+        .order_by(
+            models.Interaction.alert_started_at.desc(),
+            models.Interaction.id.desc(),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    result: List[schemas.InteractionHistoryItem] = []
+    for interaction, instance, task in rows:
+        result.append(
+            schemas.InteractionHistoryItem(
+                id=interaction.id,
+                schedule_instance_id=interaction.schedule_instance_id,
+                task_name=task.name,
+                category=task.category,
+                alert_type=interaction.alert_type,
+                alert_started_at=interaction.alert_started_at,
+                response_type=interaction.response_type,
+                response_stage=interaction.response_stage,
+                responded_at=interaction.responded_at,
+            )
+        )
+
+    return result
 
 
 @router.get("/alarm-config", response_model=schemas.AlarmConfig)

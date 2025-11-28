@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -61,6 +61,8 @@ class TodayScheduleItem(BaseModel):
     planned_end_time: time
     status: str
     remaining_seconds: Optional[int] = None
+    server_now: Optional[datetime] = None
+    is_adhoc: bool = False
 
 
 class SnoozeRequest(BaseModel):
@@ -75,3 +77,22 @@ class AlarmConfig(BaseModel):
 class AlarmConfigUpdate(BaseModel):
     sound: Optional[str] = None
     volume_percent: Optional[int] = None
+
+
+class InteractionHistoryItem(BaseModel):
+    id: int
+    schedule_instance_id: int
+    task_name: str
+    category: str
+    alert_type: str
+    alert_started_at: datetime
+    response_type: Optional[str] = None
+    response_stage: Optional[str] = None
+    responded_at: Optional[datetime] = None
+
+
+class AdhocTodayTaskCreate(BaseModel):
+    name: str
+    category: str
+    duration_minutes: int
+    start_time: time

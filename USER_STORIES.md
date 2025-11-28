@@ -54,6 +54,7 @@ This document captures user stories derived from the project plan, including set
 - [x] I can disable a task instance for today (e.g. cancel gym).
 - [x] Adjusted times are saved and reflected on the dashboard.
 - [x] Adjustments affect only that day, not the underlying template.
+- [x] I can add a one-off task instance directly into today's schedule (e.g. unexpected work request) and it appears alongside other tasks.
 
 ---
 
@@ -80,8 +81,8 @@ This document captures user stories derived from the project plan, including set
 **Acceptance Criteria**
  - [x] The dashboard shows remaining time (e.g. `00:23:45`) for the active task.
  - [x] Timer updates every second.
- - [ ] When timer reaches zero, the appropriate alert is triggered.
- - [ ] Pausing/resuming the task updates remaining time correctly.
+ - [x] When timer reaches zero, the appropriate alert is triggered.
+ - [x] Pausing/resuming the task updates remaining time correctly.
 
 ---
 

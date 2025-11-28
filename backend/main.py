@@ -255,6 +255,81 @@ async def root() -> str:
             max-height: 260px;
             overflow-y: auto;
         }
+        .add-today-row {
+            margin-top: 0.35rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            align-items: center;
+            font-size: 0.78rem;
+        }
+        .add-today-row input[type="text"],
+        .add-today-row input[type="number"],
+        .add-today-row input[type="time"] {
+            max-width: 7.5rem;
+        }
+        .add-today-label {
+            color: #9ca3af;
+        }
+        .overlay-controls {
+            margin-top: 0.35rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            font-size: 0.78rem;
+        }
+        .overlay-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            color: #9ca3af;
+        }
+        .overlay-mode-select {
+            border-radius: 0.5rem;
+            border: 1px solid rgba(55,65,81,0.9);
+            background: rgba(15,23,42,0.9);
+            color: #e5e7eb;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.78rem;
+        }
+        .history-list {
+            margin-top: 0.35rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            max-height: 220px;
+            overflow-y: auto;
+            font-size: 0.78rem;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-radius: 0.6rem;
+            padding: 0.3rem 0.45rem;
+            background: rgba(15,23,42,0.96);
+            border: 1px solid rgba(55,65,81,0.9);
+        }
+        .history-main {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+            margin-right: 0.5rem;
+        }
+        .history-task {
+            font-weight: 500;
+        }
+        .history-meta {
+            color: #9ca3af;
+            font-size: 0.75rem;
+        }
+        .history-times {
+            font-variant-numeric: tabular-nums;
+            color: #9ca3af;
+            font-size: 0.72rem;
+            white-space: nowrap;
+        }
         .alarm-settings {
             margin-top: 0.6rem;
             padding: 0.55rem 0.6rem;
@@ -405,11 +480,113 @@ async def root() -> str:
                 background-color: rgba(56,189,248,0.8);
             }
         }
+        .now-next-overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none; /* let clicks pass through to main UI */
+            z-index: 30;
+        }
+        .now-next-overlay.now-next-hidden {
+            display: none;
+        }
+        .now-next-overlay.now-next-corner {
+            align-items: flex-start;
+            justify-content: flex-end;
+            padding: 0.75rem 0.75rem 0 0;
+        }
+        .now-next-overlay.now-next-corner .now-next-inner {
+            min-width: 320px;
+            max-width: 360px;
+            padding: 0.75rem 1rem;
+            border-radius: 1.1rem;
+        }
+        .now-next-overlay.now-next-corner .now-name {
+            font-size: 1.2rem;
+        }
+        .now-next-overlay.now-next-corner #now-next-countdown {
+            font-size: 1.5rem;
+        }
+        .now-next-inner {
+            pointer-events: none; /* purely visual cards */
+            padding: 2rem 2.5rem;
+            border-radius: 1.5rem;
+            background: rgba(15,23,42,0.65);
+            border: 1px solid rgba(148,163,184,0.7);
+            box-shadow: 0 24px 60px rgba(0,0,0,0.8);
+            backdrop-filter: blur(18px);
+            min-width: 520px;
+            max-width: 720px;
+        }
+        .now-next-header {
+            font-size: 0.9rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 0.6rem;
+        }
+        .now-block {
+            padding: 1rem 1.2rem;
+            border-radius: 1rem;
+            background: radial-gradient(circle at left, rgba(34,197,94,0.3), transparent 70%);
+            border: 1px solid rgba(34,197,94,0.7);
+            margin-bottom: 0.9rem;
+            font-size: 1.1rem;
+        }
+        .now-name {
+            font-weight: 700;
+            font-size: 1.6rem;
+            margin-bottom: 0.25rem;
+        }
+        .now-meta-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-variant-numeric: tabular-nums;
+            color: #bbf7d0;
+            font-size: 1.1rem;
+            gap: 1.25rem;
+        }
+        #now-next-countdown {
+            font-size: 2.4rem;
+            font-weight: 700;
+        }
+        .next-block {
+            padding: 0.9rem 1.1rem;
+            border-radius: 1.1rem;
+            background: radial-gradient(circle at left, rgba(59,130,246,0.32), transparent 70%);
+            border: 1px solid rgba(59,130,246,0.75);
+            font-size: 1.1rem;
+        }
+        .next-label {
+            font-size: 0.82rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #bfdbfe;
+            margin-bottom: 0.25rem;
+        }
+        .next-name {
+            font-weight: 700;
+            font-size: 1.4rem;
+            margin-bottom: 0.1rem;
+        }
+        .next-time {
+            font-size: 1.1rem;
+            color: #bfdbfe;
+            font-variant-numeric: tabular-nums;
+        }
+        .now-next-empty {
+            font-size: 0.8rem;
+            color: #9ca3af;
+        }
         @media (max-width: 900px) {
             .grid {
                 grid-template-columns: 1fr;
             }
         }
+        
     </style>
 </head>
 <body>
@@ -431,6 +608,12 @@ async def root() -> str:
             </div>
             <div class="pill">Task templates · PA-001</div>
         </header>
+        <div id="now-next" class="now-next-overlay now-next-hidden">
+            <div class="now-next-inner">
+                <div class="now-next-header">Now &amp; Next</div>
+                <div id="now-next-content" class="now-next-empty">No active task yet.</div>
+            </div>
+        </div>
         <section class="grid">
             <section class="card">
                 <h2>New Task Template</h2>
@@ -481,8 +664,32 @@ async def root() -> str:
                 <hr class="divider" />
                 <h2 class="schedule-section-title">Today's Schedule</h2>
                 <p class="hint">Auto-generated from enabled templates, ordered by start time.</p>
+                <div class="add-today-row">
+                    <span class="add-today-label">Add task to today:</span>
+                    <input id="add-today-name" type="text" placeholder="Name" />
+                    <input id="add-today-category" type="text" placeholder="Category" />
+                    <input
+                        id="add-today-duration"
+                        type="number"
+                        min="1"
+                        step="1"
+                        placeholder="Min"
+                    />
+                    <input id="add-today-start" type="time" />
+                    <button id="add-today-btn" type="button" class="action-btn edit">Add</button>
+                </div>
                 <div id="active-task-banner" class="active-banner"></div>
                 <div id="schedule-status" class="status-text"></div>
+                <div class="overlay-controls">
+                    <label class="overlay-toggle">
+                        <input id="overlay-enabled" type="checkbox" checked />
+                        <span>Show Now &amp; Next overlay</span>
+                    </label>
+                    <select id="overlay-mode" class="overlay-mode-select">
+                        <option value="auto" selected>Auto (center on idle)</option>
+                        <option value="corner">Always-on corner</option>
+                    </select>
+                </div>
                 <div id="schedule-list" class="schedule-list"></div>
                 <hr class="divider" />
                 <h2 class="schedule-section-title">Alarm Settings</h2>
@@ -516,6 +723,10 @@ async def root() -> str:
                         <button id="alarm-test" type="button" class="action-btn">Test</button>
                     </div>
                 </div>
+                <hr class="divider" />
+                <h2 class="schedule-section-title">Interaction History</h2>
+                <p class="hint">Recent alerts and how you responded.</p>
+                <div id="history-list" class="history-list"></div>
             </section>
         </section>
         <footer class="footer">
@@ -530,6 +741,12 @@ async def root() -> str:
         const activeBannerEl = document.getElementById('active-task-banner');
         const scheduleStatusEl = document.getElementById('schedule-status');
         const scheduleListEl = document.getElementById('schedule-list');
+        const historyListEl = document.getElementById('history-list');
+        const addTodayNameInput = document.getElementById('add-today-name');
+        const addTodayCategoryInput = document.getElementById('add-today-category');
+        const addTodayDurationInput = document.getElementById('add-today-duration');
+        const addTodayStartInput = document.getElementById('add-today-start');
+        const addTodayBtn = document.getElementById('add-today-btn');
         const submitBtn = document.getElementById('submit-btn');
         const alertOverlay = document.getElementById('alert-overlay');
         const alertTaskNameEl = document.getElementById('alert-task-name');
@@ -540,10 +757,18 @@ async def root() -> str:
         const alarmVolumeLabel = document.getElementById('alarm-volume-label');
         const alarmSaveBtn = document.getElementById('alarm-save');
         const alarmTestBtn = document.getElementById('alarm-test');
+        const overlayEnabledInput = document.getElementById('overlay-enabled');
+        const overlayModeSelect = document.getElementById('overlay-mode');
         let editingTaskId = null;
         let activeRemainingSeconds = null;
         let activeBannerBase = null;
         let countdownIntervalId = null;
+        let nowNextCountdownId = null;
+        let nowNextHasContent = false;
+        let nowNextOverlayEnabled = true;
+        let nowNextDisplayMode = 'auto';
+        const NOW_NEXT_IDLE_MS = 5000;
+        let lastInteractionAt = Date.now();
         let lastAlertedInstanceId = null;
         let alarmConfig = { sound: 'beep', volume_percent: 12 };
         // PA-010: audio alarm escalation after visual alert
@@ -560,6 +785,10 @@ async def root() -> str:
             }
             activeRemainingSeconds = null;
             activeBannerBase = null;
+            if (nowNextCountdownId !== null) {
+                clearInterval(nowNextCountdownId);
+                nowNextCountdownId = null;
+            }
         }
 
         function formatRemaining(seconds) {
@@ -581,6 +810,153 @@ async def root() -> str:
                     ? ` · ${formatRemaining(activeRemainingSeconds)}`
                     : '';
             activeBannerEl.textContent = `${activeBannerBase}${suffix}`;
+        }
+
+        function renderNowNextOverlay(items) {
+            const container = document.getElementById('now-next-content');
+            const wrapper = document.getElementById('now-next');
+            if (!container || !wrapper) return;
+
+            if (!items || !items.length) {
+                container.className = 'now-next-empty';
+                container.textContent = 'No schedule for today.';
+                nowNextHasContent = false;
+                return;
+            }
+
+            const active = items.find((it) => it.status === 'active');
+            // Next = first future task (start time > current server_now time) sorted by planned_start_time
+            let next = null;
+            const sampleNow = items[0].server_now || null;
+            const currentTimeStr = sampleNow ? sampleNow.slice(11, 16) : null;
+
+            const future = items.filter((it) => {
+                if (!currentTimeStr) return false;
+                const start = (it.planned_start_time || '').slice(0, 5);
+                return start > currentTimeStr;
+            });
+            if (future.length) {
+                future.sort((a, b) => {
+                    const sa = (a.planned_start_time || '').slice(0, 5);
+                    const sb = (b.planned_start_time || '').slice(0, 5);
+                    return sa.localeCompare(sb);
+                });
+                next = future[0];
+            }
+
+            if (!active && !next) {
+                container.className = 'now-next-empty';
+                container.textContent = 'No active or upcoming tasks right now.';
+                nowNextHasContent = false;
+                return;
+            }
+
+            container.className = '';
+            container.innerHTML = '';
+
+            nowNextHasContent = true;
+
+            if (active) {
+                const nowBlock = document.createElement('div');
+                nowBlock.className = 'now-block';
+
+                const nowName = document.createElement('div');
+                nowName.className = 'now-name';
+                nowName.textContent = active.task_name || '';
+
+                const nowMeta = document.createElement('div');
+                nowMeta.className = 'now-meta-row';
+                const start = (active.planned_start_time || '').slice(0, 5);
+                const end = (active.planned_end_time || '').slice(0, 5);
+                const windowSpan = document.createElement('span');
+                windowSpan.textContent = `${start}–${end}`;
+                const countdownSpan = document.createElement('span');
+                countdownSpan.id = 'now-next-countdown';
+                const rem =
+                    typeof active.remaining_seconds === 'number'
+                        ? active.remaining_seconds
+                        : null;
+                countdownSpan.textContent = rem != null ? formatRemaining(rem) : '';
+
+                nowMeta.appendChild(windowSpan);
+                nowMeta.appendChild(countdownSpan);
+
+                nowBlock.appendChild(nowName);
+                nowBlock.appendChild(nowMeta);
+                container.appendChild(nowBlock);
+
+                if (rem != null && nowNextCountdownId === null) {
+                    let localRem = rem;
+                    nowNextCountdownId = setInterval(() => {
+                        const span = document.getElementById('now-next-countdown');
+                        if (!span) return;
+                        localRem = Math.max(0, localRem - 1);
+                        span.textContent = formatRemaining(localRem);
+                        if (localRem <= 0) {
+                            clearInterval(nowNextCountdownId);
+                            nowNextCountdownId = null;
+                        }
+                    }, 1000);
+                }
+            }
+
+            if (next) {
+                const nextBlock = document.createElement('div');
+                nextBlock.className = 'next-block';
+
+                const label = document.createElement('div');
+                label.className = 'next-label';
+                label.textContent = 'Next';
+
+                const name = document.createElement('div');
+                name.className = 'next-name';
+                name.textContent = next.task_name || '';
+
+                const time = document.createElement('div');
+                time.className = 'next-time';
+                const nStart = (next.planned_start_time || '').slice(0, 5);
+                const nEnd = (next.planned_end_time || '').slice(0, 5);
+                time.textContent = nStart && nEnd ? `${nStart}–${nEnd}` : nStart || '';
+
+                nextBlock.appendChild(label);
+                nextBlock.appendChild(name);
+                nextBlock.appendChild(time);
+                container.appendChild(nextBlock);
+            }
+            updateNowNextVisibility();
+        }
+
+        function markUserInteraction() {
+            lastInteractionAt = Date.now();
+            const wrapper = document.getElementById('now-next');
+            if (!wrapper) return;
+            if (!nowNextOverlayEnabled) {
+                wrapper.classList.add('now-next-hidden');
+                return;
+            }
+            if (nowNextDisplayMode === 'corner') {
+                return;
+            }
+            wrapper.classList.add('now-next-hidden');
+        }
+
+        function updateNowNextVisibility() {
+            const wrapper = document.getElementById('now-next');
+            if (!wrapper) return;
+            if (!nowNextOverlayEnabled || !nowNextHasContent) {
+                wrapper.classList.add('now-next-hidden');
+                return;
+            }
+            if (nowNextDisplayMode === 'corner') {
+                wrapper.classList.remove('now-next-hidden');
+                return;
+            }
+            const idleFor = Date.now() - lastInteractionAt;
+            if (idleFor >= NOW_NEXT_IDLE_MS) {
+                wrapper.classList.remove('now-next-hidden');
+            } else {
+                wrapper.classList.add('now-next-hidden');
+            }
         }
 
         function stopAlarm() {
@@ -694,9 +1070,15 @@ async def root() -> str:
                     )}`;
                     fetch(url, {
                         method: 'POST',
-                    }).catch((err) => {
-                        console.error('Failed to acknowledge alert', err);
-                    });
+                    })
+                        .then(() => {
+                            if (typeof loadHistory === 'function') {
+                                loadHistory();
+                            }
+                        })
+                        .catch((err) => {
+                            console.error('Failed to acknowledge alert', err);
+                        });
                 }
                 hideAlert();
             });
@@ -799,6 +1181,65 @@ async def root() -> str:
         if (alarmTestBtn) {
             alarmTestBtn.addEventListener('click', () => {
                 playTestAlarm();
+            });
+        }
+
+        async function addAdhocTodayTask() {
+            if (!scheduleStatusEl || !addTodayNameInput || !addTodayStartInput) return;
+
+            const name = (addTodayNameInput.value || '').trim();
+            const category = (addTodayCategoryInput?.value || '').trim() || 'misc';
+            const durationStr = addTodayDurationInput?.value || '';
+            const start = addTodayStartInput.value;
+
+            const duration = parseInt(durationStr || '0', 10);
+
+            if (!name || !start) {
+                scheduleStatusEl.textContent =
+                    'Please provide a name and start time to add a task for today.';
+                scheduleStatusEl.className = 'status-text error';
+                return;
+            }
+
+            const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 60;
+
+            const payload = {
+                name,
+                category,
+                duration_minutes: safeDuration,
+                start_time: `${start}:00`,
+            };
+
+            try {
+                const res = await fetch('/schedule/adhoc-today', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(text || 'Failed to add task for today');
+                }
+
+                addTodayNameInput.value = '';
+                if (addTodayCategoryInput) addTodayCategoryInput.value = '';
+                if (addTodayDurationInput) addTodayDurationInput.value = '';
+                if (addTodayStartInput) addTodayStartInput.value = '';
+
+                scheduleStatusEl.textContent = 'Task added to today.';
+                scheduleStatusEl.className = 'status-text ok';
+
+                await loadSchedule();
+            } catch (err) {
+                console.error(err);
+                scheduleStatusEl.textContent = 'Error adding task to today.';
+                scheduleStatusEl.className = 'status-text error';
+            }
+        }
+
+        if (addTodayBtn) {
+            addTodayBtn.addEventListener('click', async () => {
+                await addAdhocTodayTask();
             });
         }
 
@@ -952,6 +1393,8 @@ async def root() -> str:
                 activeBannerEl.className = 'active-banner empty';
                 activeBannerEl.textContent = 'No active task right now.';
             }
+            renderNowNextOverlay(items);
+
             if (!items.length) {
                 scheduleListEl.innerHTML = '<div class="hint">No schedule for today yet. Add some templates to get started.</div>';
                 scheduleStatusEl.textContent = '';
@@ -964,12 +1407,18 @@ async def root() -> str:
                 if (bannerItem) {
                     const start = (bannerItem.planned_start_time || '').slice(0, 5);
                     const end = (bannerItem.planned_end_time || '').slice(0, 5);
-                    const prefix = bannerItem.status === 'paused' ? 'Paused: ' : 'Active now: ';
+                    const isPaused = bannerItem.status === 'paused';
+                    const prefix = isPaused ? 'Paused: ' : 'Active now: ';
                     activeBannerBase = `${prefix}${bannerItem.task_name} (${start}–${end})`;
-                    activeRemainingSeconds =
-                        typeof bannerItem.remaining_seconds === 'number'
-                            ? bannerItem.remaining_seconds
-                            : null;
+
+                    const hasServerRemaining =
+                        typeof bannerItem.remaining_seconds === 'number' &&
+                        Number.isFinite(bannerItem.remaining_seconds);
+                    // Do not show a ticking countdown while paused; only for active tasks.
+                    activeRemainingSeconds = !isPaused && hasServerRemaining
+                        ? bannerItem.remaining_seconds
+                        : null;
+
                     activeBannerEl.className = 'active-banner';
                     updateActiveBannerText();
 
@@ -982,8 +1431,16 @@ async def root() -> str:
                         countdownIntervalId = setInterval(() => {
                             if (activeRemainingSeconds == null) return;
                             activeRemainingSeconds -= 1;
-                            if (activeRemainingSeconds < 0) {
+                            if (activeRemainingSeconds <= 0) {
                                 activeRemainingSeconds = 0;
+                                updateActiveBannerText();
+                                clearInterval(countdownIntervalId);
+                                countdownIntervalId = null;
+                                // Force an immediate schedule refresh so that
+                                // when the timer reaches zero, any next task
+                                // becomes active and its alert is shown.
+                                loadSchedule();
+                                return;
                             }
                             updateActiveBannerText();
                         }, 1000);
@@ -1015,7 +1472,8 @@ async def root() -> str:
 
                 const meta = document.createElement('div');
                 meta.className = 'schedule-meta';
-                meta.textContent = `${item.category} · ${item.status}`;
+                const adhocSuffix = item.is_adhoc ? ' · adhoc' : '';
+                meta.textContent = `${item.category} · ${item.status}${adhocSuffix}`;
 
                 main.appendChild(title);
                 main.appendChild(meta);
@@ -1093,6 +1551,7 @@ async def root() -> str:
                                 scheduleStatusEl.textContent = `Task snoozed by +${minutes} minutes.`;
                                 scheduleStatusEl.className = 'status-text ok';
                                 await loadSchedule();
+                                await loadHistory();
                             } catch (err) {
                                 console.error(err);
                                 scheduleStatusEl.textContent = 'Error snoozing task.';
@@ -1193,6 +1652,60 @@ async def root() -> str:
             }
         }
 
+        function renderHistory(items) {
+            if (!historyListEl) return;
+            if (!items.length) {
+                historyListEl.innerHTML =
+                    '<div class="hint">No interactions yet. Recent alerts will show here.</div>';
+                return;
+            }
+            historyListEl.innerHTML = '';
+            for (const item of items) {
+                const row = document.createElement('div');
+                row.className = 'history-item';
+
+                const main = document.createElement('div');
+                main.className = 'history-main';
+
+                const task = document.createElement('div');
+                task.className = 'history-task';
+                task.textContent = item.task_name || '';
+
+                const meta = document.createElement('div');
+                meta.className = 'history-meta';
+                const resp = item.response_type || 'none';
+                const stage = item.response_stage || '';
+                meta.textContent = `${item.category} · ${item.alert_type} → ${resp}$${
+                    stage ? ' (' + stage + ')' : ''
+                }`;
+
+                main.appendChild(task);
+                main.appendChild(meta);
+
+                const times = document.createElement('div');
+                times.className = 'history-times';
+                const started = (item.alert_started_at || '').slice(11, 16);
+                const responded = item.responded_at ? item.responded_at.slice(11, 16) : '';
+                times.textContent = responded ? `${started} → ${responded}` : `${started} → …`;
+
+                row.appendChild(main);
+                row.appendChild(times);
+                historyListEl.appendChild(row);
+            }
+        }
+
+        async function loadHistory() {
+            if (!historyListEl) return;
+            try {
+                const res = await fetch('/schedule/interactions/recent?limit=50');
+                if (!res.ok) throw new Error('Failed to load history');
+                const data = await res.json();
+                renderHistory(data);
+            } catch (err) {
+                console.error('Failed to load history', err);
+            }
+        }
+
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
             statusEl.textContent = '';
@@ -1256,16 +1769,70 @@ async def root() -> str:
                 submitBtn.disabled = false;
             }
         });
+        
+        if (overlayEnabledInput) {
+            nowNextOverlayEnabled = overlayEnabledInput.checked;
+            overlayEnabledInput.addEventListener('change', () => {
+                nowNextOverlayEnabled = overlayEnabledInput.checked;
+                if (!nowNextOverlayEnabled) {
+                    const wrapper = document.getElementById('now-next');
+                    if (wrapper) {
+                        wrapper.classList.add('now-next-hidden');
+                    }
+                } else {
+                    markUserInteraction();
+                    updateNowNextVisibility();
+                }
+            });
+        }
+        
+        if (overlayModeSelect) {
+            nowNextDisplayMode = overlayModeSelect.value || 'auto';
+            const initialWrapper = document.getElementById('now-next');
+            if (initialWrapper && nowNextDisplayMode === 'corner') {
+                initialWrapper.classList.add('now-next-corner');
+            }
+            overlayModeSelect.addEventListener('change', () => {
+                nowNextDisplayMode = overlayModeSelect.value || 'auto';
+                const wrapper = document.getElementById('now-next');
+                if (!wrapper) return;
+                if (nowNextDisplayMode === 'corner') {
+                    wrapper.classList.add('now-next-corner');
+                } else {
+                    wrapper.classList.remove('now-next-corner');
+                }
+                updateNowNextVisibility();
+            });
+        }
+
+        // Global user interaction listeners to hide the Now & Next overlay immediately
+        // and reset the idle timer whenever the user interacts with the UI.
+        document.addEventListener('click', () => {
+            markUserInteraction();
+        });
+        document.addEventListener('keydown', () => {
+            markUserInteraction();
+        });
+        document.addEventListener('mousemove', () => {
+            markUserInteraction();
+        });
+        document.addEventListener('touchstart', () => {
+            markUserInteraction();
+        });
+
+        // Periodically check whether the user has been idle long enough to
+        // show the Now & Next overlay as floating cards.
+        setInterval(updateNowNextVisibility, 500);
 
         loadTasks();
         loadSchedule();
         loadAlarmConfig();
-        // Simple polling loop so the active task updates as time passes (PA-005)
-        setInterval(loadSchedule, 30000);
+        loadHistory();
+        // High-frequency polling so the active task and alerts update almost in real time (PA-005)
+        setInterval(loadSchedule, 1000);
     </script>
 </body>
-</html>"""
-
-
+</html>
+"""
 app.include_router(tasks.router)
 app.include_router(schedule.router)
