@@ -217,6 +217,7 @@ def get_today_schedule(db: Session = Depends(get_db)):
         db.query(models.ScheduleInstance, models.Task)
         .join(models.Task, models.ScheduleInstance.task_id == models.Task.id)
         .filter(models.ScheduleInstance.date == today)
+        .filter(models.ScheduleInstance.status != "cancelled")
         .order_by(models.ScheduleInstance.planned_start_time)
         .all()
     )

@@ -107,7 +107,7 @@ This document captures user stories derived from the project plan, including set
 **Acceptance Criteria**
 - [x] There is a “Snooze” button with preset options (e.g. +5, +10, +15 mins).
 - [x] Choosing snooze extends the end time or delays task start (depending on design).
-- [ ] Alert stops when snoozed and restarts after snooze period.
+- [x] Alert stops when snoozed and restarts after snooze period.
 - [x] Snooze is logged with timestamp and duration.
 
 ---
@@ -176,10 +176,10 @@ This document captures user stories derived from the project plan, including set
 **So that** the AI can analyze my habits later.
 
 **Acceptance Criteria**
-- [ ] For every scheduled task alert, an entry is added to `interactions`.
-- [ ] Logged fields include: schedule_instance_id, alert_type, alert_started_at.
-- [ ] When I respond, log is updated with response_type, response_stage, responded_at.
-- [ ] If I never respond, system eventually marks response_type as `none` after some timeout.
+- [x] For every scheduled task alert, an entry is added to `interactions`.
+- [x] Logged fields include: schedule_instance_id, alert_type, alert_started_at.
+- [x] When I respond, log is updated with response_type, response_stage, responded_at.
+- [x] If I never respond, system eventually marks response_type as `none` after some timeout.
 
 ---
 
@@ -189,13 +189,13 @@ This document captures user stories derived from the project plan, including set
 **So that** I can understand how I’ve been responding to reminders.
 
 **Acceptance Criteria**
-- [ ] Simple “History” page listing recent tasks with:
+- [x] Simple “History” page listing recent tasks with:
   - Task name, category.
   - Alert type used.
   - Response type (acknowledge/snooze/skip/none).
   - Response stage (visual vs alarm).
-- [ ] History is sorted by most recent first.
-- [ ] I can filter by date range and category (optional for later).
+- [x] History is sorted by most recent first.
+- [x] I can filter by date range and category (optional for later).
 
 ---
 
@@ -211,6 +211,9 @@ This document captures user stories derived from the project plan, including set
   - Percent of responses at alarm stage.
   - Percent of no responses.
 - [ ] Based on thresholds (configurable), it chooses a `preferred_alert_style` and saves it in `preferences`.
+
+**Design notes (not yet implemented)**  
+A periodic analysis job will group `Interaction` records by `Task.category`, compute response rates at visual stage, alarm stage, and no response over a recent window, and upsert a `CategoryAlertPreference` row per category storing `preferred_alert_style` (e.g. `visual_only`, `visual_then_alarm`, `alarm_only`), the computed rates, total sample size, and `last_computed_at`. Thresholds such as minimum samples, dominance cut-offs, and no-response tolerances will be configurable.
 
 ---
 
@@ -293,6 +296,9 @@ This document captures user stories derived from the project plan, including set
 - [ ] LLM replies with suggested changes (e.g. shorter evening coding blocks, moving gym earlier).
 - [ ] Suggestions are displayed on a “Recommendations” page.
 - [ ] Nothing is changed automatically; I must confirm any updates.
+
+**Design notes (LLM provider)**  
+PA-021 will use DeepSeek AI as the LLM provider via its HTTP API, with the API key supplied via environment variables rather than hardcoded in the codebase.
 
 ---
 

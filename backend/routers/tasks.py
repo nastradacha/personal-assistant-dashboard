@@ -1,4 +1,5 @@
 from typing import List
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -59,5 +60,16 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 
     # Soft delete: mark as disabled so historical data can remain intact
     task.enabled = False
+
+    today = date.today()
+    instances = (
+        db.query(models.ScheduleInstance)
+        .filter(models.ScheduleInstance.task_id == task_id)
+        .filter(models.ScheduleInstance.date == today)
+        .all()
+    )
+    for instance in instances:
+        instance.status = "cancelled"
+
     db.commit()
     return None
