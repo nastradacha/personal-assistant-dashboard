@@ -12,10 +12,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I don’t have to manually recreate them every day.
 
 **Acceptance Criteria**
-- [ ] From the UI, I can open a “New Task Template” form.
-- [ ] I can set: name, category, default duration, recurrence (e.g. daily, weekdays), and preferred time window.
-- [ ] I can save the template and see it in a list of templates.
-- [ ] Templates are stored in the database and persist after restart.
+ - [x] From the UI, I can open a “New Task Template” form.
+ - [x] I can set: name, category, default duration, recurrence (e.g. daily, weekdays), and preferred time window.
+ - [x] I can save the template and see it in a list of templates.
+ - [x] Templates are stored in the database and persist after restart.
 
 ---
 
@@ -25,9 +25,9 @@ This document captures user stories derived from the project plan, including set
 **So that** my recurring tasks stay up to date with my real-life routine.
 
 **Acceptance Criteria**
-- [ ] From the templates list, I can open an existing template and change its fields.
-- [ ] I can delete a template and it disappears from the list.
-- [ ] Deleting a template does **not** remove historical log data, only future schedule generation.
+ - [x] From the templates list, I can open an existing template and change its fields.
+ - [x] I can delete a template and it disappears from the list.
+ - [x] Deleting a template does **not** remove historical log data, only future schedule generation.
 
 ---
 
@@ -37,10 +37,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I have a full day plan without manually assigning every task.
 
 **Acceptance Criteria**
-- [ ] When a new day starts, the system creates `schedule_instances` from enabled templates.
-- [ ] The schedule respects recurrence rules (e.g. weekdays only, specific days).
-- [ ] I can see a list of today’s tasks ordered by time.
-- [ ] If no templates exist, the schedule shows as empty with a friendly message.
+- [x] When a new day starts, the system creates `schedule_instances` from enabled templates.
+- [x] The schedule respects recurrence rules (e.g. weekdays only, specific days).
+- [x] I can see a list of today’s tasks ordered by time.
+- [x] If no templates exist, the schedule shows as empty with a friendly message.
 
 ---
 
@@ -50,10 +50,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I can move tasks around when real life changes.
 
 **Acceptance Criteria**
-- [ ] I can change the start time of a scheduled task instance for today.
-- [ ] I can disable a task instance for today (e.g. cancel gym).
-- [ ] Adjusted times are saved and reflected on the dashboard.
-- [ ] Adjustments affect only that day, not the underlying template.
+- [x] I can change the start time of a scheduled task instance for today.
+- [x] I can disable a task instance for today (e.g. cancel gym).
+- [x] Adjusted times are saved and reflected on the dashboard.
+- [x] Adjustments affect only that day, not the underlying template.
 
 ---
 
@@ -65,10 +65,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I don’t have to remember to manually start timers.
 
 **Acceptance Criteria**
-- [ ] When current time >= planned start_time for a pending task, it becomes “active”.
-- [ ] Only one task can be “active” at a time.
-- [ ] The active task is shown prominently on the dashboard.
-- [ ] If system restarts, it restores the correct active task based on current time.
+ - [x] When current time >= planned start_time for a pending task, it becomes “active”.
+ - [x] Only one task can be “active” at a time.
+ - [x] The active task is shown prominently on the dashboard.
+ - [x] If system restarts, it restores the correct active task based on current time.
 
 ---
 
@@ -78,10 +78,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I know how much time I have left.
 
 **Acceptance Criteria**
-- [ ] The dashboard shows remaining time (e.g. `00:23:45`) for the active task.
-- [ ] Timer updates every second.
-- [ ] When timer reaches zero, the appropriate alert is triggered.
-- [ ] Pausing/resuming the task updates remaining time correctly.
+ - [x] The dashboard shows remaining time (e.g. `00:23:45`) for the active task.
+ - [x] Timer updates every second.
+ - [ ] When timer reaches zero, the appropriate alert is triggered.
+ - [ ] Pausing/resuming the task updates remaining time correctly.
 
 ---
 
@@ -91,10 +91,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I can handle interruptions without losing context.
 
 **Acceptance Criteria**
-- [ ] There is a “Pause” button for the active task.
-- [ ] When paused, countdown stops and visual state indicates paused.
-- [ ] “Resume” restarts countdown from where it left off.
-- [ ] Pause/resume events are recorded in the database (optional log).
+ - [x] There is a “Pause” button for the active task.
+ - [x] When paused, countdown stops and visual state indicates paused.
+ - [x] “Resume” restarts countdown from where it left off.
+ - [x] Pause/resume events are recorded in the database (optional log).
 
 ---
 
@@ -104,10 +104,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I can delay switching when needed without cancelling.
 
 **Acceptance Criteria**
-- [ ] There is a “Snooze” button with preset options (e.g. +5, +10, +15 mins).
-- [ ] Choosing snooze extends the end time or delays task start (depending on design).
+- [x] There is a “Snooze” button with preset options (e.g. +5, +10, +15 mins).
+- [x] Choosing snooze extends the end time or delays task start (depending on design).
 - [ ] Alert stops when snoozed and restarts after snooze period.
-- [ ] Snooze is logged with timestamp and duration.
+- [x] Snooze is logged with timestamp and duration.
 
 ---
 
@@ -119,10 +119,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I can’t ignore when it’s time to switch.
 
 **Acceptance Criteria**
-- [ ] When a task becomes active, dashboard enters “alert mode”.
-- [ ] Background or a large area flashes between at least two colors.
-- [ ] Alert continues until I acknowledge or snooze.
-- [ ] Flicker works full-screen and is clearly noticeable.
+- [x] When a task becomes active, dashboard enters “alert mode”.
+- [x] Background or a large area flashes between at least two colors.
+- [x] Alert continues until I acknowledge or snooze.
+- [x] Flicker works full-screen and is clearly noticeable.
 
 ---
 
@@ -132,10 +132,10 @@ This document captures user stories derived from the project plan, including set
 **So that** I don’t miss important transitions.
 
 **Acceptance Criteria**
-- [ ] If no response within configurable delay (e.g. 60–120 seconds), an audio alarm starts.
-- [ ] Visual flicker continues while alarm is playing.
-- [ ] Alarm stops instantly when I acknowledge/snooze/skip.
-- [ ] Escalation delay is configurable (e.g. via settings file or UI).
+- [x] If no response within configurable delay (e.g. 60–120 seconds), an audio alarm starts.
+- [x] Visual flicker continues while alarm is playing.
+- [x] Alarm stops instantly when I acknowledge/snooze/skip.
+- [x] Escalation delay is configurable (e.g. via settings file or UI).
 
 ---
 
@@ -145,12 +145,12 @@ This document captures user stories derived from the project plan, including set
 **So that** I can tell the system I’ve seen the alert.
 
 **Acceptance Criteria**
-- [ ] There is a large, clearly labeled “Acknowledge” button during alerts.
-- [ ] Clicking it:
+- [x] There is a large, clearly labeled “Acknowledge” button during alerts.
+- [x] Clicking it:
   - Stops flickering.
   - Stops audio if playing.
   - Marks the alert as responded (with timestamp).
-- [ ] System transitions to “normal” mode showing task progress.
+- [x] System transitions to “normal” mode showing task progress.
 
 ---
 
@@ -160,10 +160,10 @@ This document captures user stories derived from the project plan, including set
 **So that** the alerts are loud enough but not unbearable.
 
 **Acceptance Criteria**
-- [ ] I can choose between at least two alarm sounds.
-- [ ] I can set a preferred volume level (within OS limits).
-- [ ] Test button plays sound at configured volume.
-- [ ] Settings persist after restart.
+ - [x] I can choose between at least two alarm sounds.
+ - [x] I can set a preferred volume level (within OS limits).
+ - [x] Test button plays sound at configured volume.
+ - [x] Settings persist after restart.
 
 ---
 
