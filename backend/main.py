@@ -1,14 +1,20 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from .db import Base, engine
-from .routers import schedule, tasks
+from .routers import schedule, tasks, ai
 
 
 # Ensure tables are created on startup (simple dev-time approach)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Personal Assistant Dashboard")
+
+static_dir = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.get("/health")
@@ -124,6 +130,9 @@ async def root() -> str:
             gap: 1.25rem;
         }
         #view-today.grid {
+            grid-template-columns: 1fr;
+        }
+        #view-history.grid {
             grid-template-columns: 1fr;
         }
         .card {
@@ -381,6 +390,25 @@ async def root() -> str:
         }
         .add-today-label {
             color: #9ca3af;
+        }
+        .micro-journal {
+            margin-top: 0.5rem;
+            padding-top: 0.45rem;
+            border-top: 1px solid rgba(31,41,55,0.9);
+        }
+        .micro-journal-hidden {
+            display: none;
+        }
+        .micro-journal-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            align-items: center;
+            font-size: 0.78rem;
+        }
+        .micro-journal-input {
+            flex: 1;
+            min-width: 0;
         }
         .overlay-controls {
             margin-top: 0.35rem;
@@ -849,6 +877,15 @@ async def root() -> str:
             <section class="card">
                 <h2 class="schedule-section-title">Today's Schedule</h2>
                 <p class="hint">Focus mode: adjust only what you need for today, including ad-hoc tasks.</p>
+                <div class="template-search-row" style="margin-bottom: 0.2rem;">
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem; width: 100%;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                            <span style="font-size: 0.8rem; color: #9ca3af;">What should I do now?</span>
+                            <button id="ai-now-btn" type="button" class="action-btn edit" style="padding: 0.25rem 0.7rem; font-size: 0.75rem;">Ask AI</button>
+                        </div>
+                        <div id="ai-now-suggestion" class="status-text" style="min-height: 1.4rem;"></div>
+                    </div>
+                </div>
                 <div class="add-today-row">
                     <span class="add-today-label">Add task to today:</span>
                     <input id="add-today-name" type="text" placeholder="Name" />
@@ -876,13 +913,41 @@ async def root() -> str:
                     </select>
                 </div>
                 <div id="schedule-list" class="schedule-list"></div>
+                <div id="micro-journal" class="micro-journal micro-journal-hidden">
+                    <p class="hint" style="margin-bottom: 0.4rem;">Optional: jot a short note about why you snoozed or skipped.</p>
+                    <div class="micro-journal-row">
+                        <span id="micro-journal-label" class="add-today-label"></span>
+                        <input
+                            id="micro-journal-input"
+                            type="text"
+                            maxlength="300"
+                            class="history-filter-input micro-journal-input"
+                            placeholder="One short sentence (optional)"
+                        />
+                        <button id="micro-journal-save" type="button" class="action-btn edit">Save note</button>
+                        <button id="micro-journal-skip" type="button" class="action-btn">Skip</button>
+                    </div>
+                    <div id="micro-journal-status" class="status-text"></div>
+                </div>
             </section>
         </section>
 
         <section id="view-planner" class="grid view-hidden">
             <section class="card">
-                <h2>New Task Template</h2>
-                <p class="hint">Design or tweak recurring blocks like work, coding, gym, dog walks, and more.</p>
+                <h2>Design &amp; refine your routine</h2>
+                <p class="hint">Use the form and AI helper to design your recurring day, then refine individual templates as you go.</p>
+                <div class="template-search-row">
+                    <textarea
+                        id="ai-template-free-text"
+                        rows="2"
+                        style="width: 100%; resize: vertical; font-size: 0.8rem;"
+                        placeholder="Describe your routine in a few sentences, e.g. 'On weekdays I want deep work blocks, a walk, and a short evening wind‑down.'"
+                    ></textarea>
+                    <button id="ai-template-suggest-btn" type="button" class="action-btn edit" style="margin-top: 0.3rem;">
+                        Design my routine (AI)
+                    </button>
+                    <div id="ai-template-status" class="status-text"></div>
+                </div>
                 <form id="task-form" autocomplete="off">
                     <label>
                         Name
@@ -966,13 +1031,69 @@ async def root() -> str:
                         <button id="alarm-test" type="button" class="action-btn">Test</button>
                     </div>
                 </div>
+                <hr class="divider" />
+                <h2 class="schedule-section-title">AI Alert Wording Experiments</h2>
+                <p class="hint">Have the AI suggest alternative alert texts per category and tone, then pick one to use.</p>
+                <div class="alarm-settings" id="alert-wording-settings">
+                    <div class="alarm-settings-row">
+                        <label class="alarm-label">
+                            Category
+                            <select id="alert-wording-category" class="history-filter-select">
+                                <option value="">Select category</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="alarm-settings-row">
+                        <label class="alarm-label">
+                            Tone
+                            <input
+                                id="alert-wording-tone"
+                                type="text"
+                                class="history-filter-input"
+                                placeholder="e.g. neutral/firm, encouraging, protective"
+                            />
+                        </label>
+                    </div>
+                    <div class="alarm-settings-row">
+                        <label class="alarm-label">
+                            Max length (characters)
+                            <input
+                                id="alert-wording-max-length"
+                                type="number"
+                                class="history-filter-input"
+                                min="40"
+                                max="200"
+                                step="10"
+                                value="120"
+                            />
+                        </label>
+                        <label class="alarm-label">
+                            Options to generate
+                            <input
+                                id="alert-wording-count"
+                                type="number"
+                                class="history-filter-input"
+                                min="3"
+                                max="8"
+                                step="1"
+                                value="5"
+                            />
+                        </label>
+                    </div>
+                    <div class="alarm-settings-row alarm-settings-actions">
+                        <button id="ai-alert-wording-btn" type="button" class="action-btn edit">Ask AI for alert texts</button>
+                    </div>
+                    <div id="ai-alert-wording-status" class="status-text"></div>
+                    <div id="alert-wording-current" class="status-text"></div>
+                    <div id="ai-alert-wording-options" class="history-list" style="margin-top: 0.3rem;"></div>
+                </div>
             </section>
         </section>
 
         <section id="view-history" class="grid view-hidden">
             <section class="card">
                 <h2 class="schedule-section-title">Interaction History</h2>
-                <p class="hint">Recent alerts and how you responded, with filters for deeper inspection.</p>
+                <p class="hint">Recent alerts and how you responded. Use filters, then ask the assistant for summaries.</p>
                 <div class="history-filters">
                     <div class="history-filter-group">
                         <label class="history-filter-label">
@@ -993,1433 +1114,52 @@ async def root() -> str:
                 </div>
                 <div id="history-list" class="history-list"></div>
             </section>
+            <section class="card">
+                <h2 class="schedule-section-title">AI Insights on Alerts</h2>
+                <p class="hint">Have the assistant scan this range for behavior patterns and gentle adjustments.</p>
+                <div class="history-filters" style="margin-top: 0.3rem; margin-bottom: 0.4rem;">
+                    <div class="history-filter-group">
+                        <span style="font-size: 0.78rem; color: #9ca3af;">Uses the same From/To range above. Leave blank for last 7 days.</span>
+                    </div>
+                    <button id="ai-history-btn" type="button" class="action-btn edit">Generate insights (AI)</button>
+                </div>
+                <div id="ai-history-status" class="status-text"></div>
+                <div id="ai-history-insights" class="history-list" style="margin-top: 0.4rem;"></div>
+                <div id="ai-history-recs" class="history-list" style="margin-top: 0.2rem;"></div>
+                <div class="history-filters" style="margin-top: 0.3rem;">
+                    <button id="ai-history-play-btn" type="button" class="action-btn">Listen to summary (audio)</button>
+                </div>
+            </section>
+            <section class="card">
+                <h2 class="schedule-section-title">Skip &amp; Snooze Notes – AI Summary</h2>
+                <p class="hint">Summarize why you skipped or snoozed tasks in this range, using your micro-journal notes.</p>
+                <div class="history-filters" style="margin-top: 0.3rem; margin-bottom: 0.4rem;">
+                    <div class="history-filter-group">
+                        <span style="font-size: 0.78rem; color: #9ca3af;">Uses the same From/To range above. Only considers notes recorded right after snooze/disable actions.</span>
+                    </div>
+                    <button id="ai-notes-btn" type="button" class="action-btn edit">Summarize notes (AI)</button>
+                </div>
+                <div id="ai-notes-status" class="status-text"></div>
+                <div id="ai-notes-patterns" class="history-list" style="margin-top: 0.4rem;"></div>
+                <div id="ai-notes-recs" class="history-list" style="margin-top: 0.2rem;"></div>
+                <div class="history-filters" style="margin-top: 0.3rem;">
+                    <button id="ai-notes-play-btn" type="button" class="action-btn">Listen to notes summary (audio)</button>
+                </div>
+            </section>
         </section>
         <footer class="footer">
             <span>Backend: FastAPI · SQLite · SQLAlchemy</span>
             <span>Epics: Task & schedule management first, then scheduler & alerts.</span>
         </footer>
     </main>
-    <script>
-        const form = document.getElementById('task-form');
-        const statusEl = document.getElementById('status');
-        const tasksListEl = document.getElementById('tasks-list');
-        const templateSearchInput = document.getElementById('template-search');
-        const activeBannerEl = document.getElementById('active-task-banner');
-        const scheduleStatusEl = document.getElementById('schedule-status');
-        const scheduleListEl = document.getElementById('schedule-list');
-        const historyListEl = document.getElementById('history-list');
-        const historyFromInput = document.getElementById('history-from');
-        const historyToInput = document.getElementById('history-to');
-        const historyCategorySelect = document.getElementById('history-category');
-        const addTodayNameInput = document.getElementById('add-today-name');
-        const addTodayCategoryInput = document.getElementById('add-today-category');
-        const addTodayDurationInput = document.getElementById('add-today-duration');
-        const addTodayStartInput = document.getElementById('add-today-start');
-        const addTodayBtn = document.getElementById('add-today-btn');
-        const submitBtn = document.getElementById('submit-btn');
-        const alertOverlay = document.getElementById('alert-overlay');
-        const alertTaskNameEl = document.getElementById('alert-task-name');
-        const alertTaskWindowEl = document.getElementById('alert-task-window');
-        const alertDismissBtn = document.getElementById('alert-dismiss');
-        const alarmSoundSelect = document.getElementById('alarm-sound');
-        const alarmVolumeInput = document.getElementById('alarm-volume');
-        const alarmVolumeLabel = document.getElementById('alarm-volume-label');
-        const alarmSaveBtn = document.getElementById('alarm-save');
-        const alarmTestBtn = document.getElementById('alarm-test');
-        const overlayEnabledInput = document.getElementById('overlay-enabled');
-        const overlayModeSelect = document.getElementById('overlay-mode');
-        const hudClockEl = document.getElementById('hud-clock');
-        const topNowStripEl = document.getElementById('top-now-strip');
-        const tabButtons = document.querySelectorAll('.tab-button');
-        const viewToday = document.getElementById('view-today');
-        const viewPlanner = document.getElementById('view-planner');
-        const viewHistory = document.getElementById('view-history');
-        let editingTaskId = null;
-        let activeRemainingSeconds = null;
-        let activeBannerBase = null;
-        let countdownIntervalId = null;
-        let nowNextCountdownId = null;
-        let nowNextHasContent = false;
-        let nowNextOverlayEnabled = true;
-        let nowNextDisplayMode = 'auto';
-        const NOW_NEXT_IDLE_MS = 5000;
-        let lastInteractionAt = Date.now();
-        let lastAlertedInstanceId = null;
-        let alarmConfig = { sound: 'beep', volume_percent: 12 };
-        // PA-010: audio alarm escalation after visual alert
-        const ALERT_ESCALATION_DELAY_MS = 5000; // configurable (e.g. 60-120s)
-        let alarmEscalationTimeoutId = null;
-        let alarmAudioContext = null;
-        let alarmOscillator = null;
-        let alarmContextReady = false;
-        const snoozeRealertTimeouts = {};
-        let templateTasksAll = [];
-        let historyItemsAll = [];
-
-        function updateHudClock() {
-            if (!hudClockEl) return;
-            const now = new Date();
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const day = days[now.getDay()];
-            const month = months[now.getMonth()];
-            const date = String(now.getDate()).padStart(2, '0');
-            let hours = now.getHours();
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            hours = hours % 12;
-            if (hours === 0) hours = 12;
-            const timePart = `${hours}:${minutes} ${ampm}`;
-            hudClockEl.textContent = `${day} · ${month} ${date} · ${timePart}`;
-        }
-
-        function switchView(target) {
-            const mapping = {
-                today: viewToday,
-                planner: viewPlanner,
-                history: viewHistory,
-            };
-
-            Object.entries(mapping).forEach(([key, section]) => {
-                if (!section) return;
-                if (key === target) {
-                    section.classList.remove('view-hidden');
-                } else {
-                    section.classList.add('view-hidden');
-                }
-            });
-
-            if (tabButtons && tabButtons.length) {
-                tabButtons.forEach((btn) => {
-                    const v = btn.getAttribute('data-view');
-                    if (v === target) {
-                        btn.classList.add('tab-active');
-                    } else {
-                        btn.classList.remove('tab-active');
-                    }
-                });
-            }
-        }
-
-        function clearCountdown() {
-            if (countdownIntervalId !== null) {
-                clearInterval(countdownIntervalId);
-                countdownIntervalId = null;
-            }
-            activeRemainingSeconds = null;
-            activeBannerBase = null;
-            if (nowNextCountdownId !== null) {
-                clearInterval(nowNextCountdownId);
-                nowNextCountdownId = null;
-            }
-        }
-
-        function clearSnoozeRealert(instanceId) {
-            if (!instanceId) return;
-            const existing = snoozeRealertTimeouts[instanceId];
-            if (existing) {
-                clearTimeout(existing);
-                delete snoozeRealertTimeouts[instanceId];
-            }
-        }
-
-        function formatRemaining(seconds) {
-            if (seconds == null || Number.isNaN(seconds)) return '';
-            const clamped = Math.max(0, seconds);
-            const h = Math.floor(clamped / 3600);
-            const m = Math.floor((clamped % 3600) / 60);
-            const s = clamped % 60;
-            const hh = h > 0 ? String(h).padStart(2, '0') + ':' : '';
-            const mm = String(m).padStart(2, '0');
-            const ss = String(s).padStart(2, '0');
-            return `${hh}${mm}:${ss}`;
-        }
-
-        function updateActiveBannerText() {
-            if (!activeBannerBase) return;
-            const suffix =
-                activeRemainingSeconds != null
-                    ? ` · ${formatRemaining(activeRemainingSeconds)}`
-                    : '';
-            const text = `${activeBannerBase}${suffix}`;
-            if (activeBannerEl) {
-                activeBannerEl.textContent = text;
-            }
-            if (topNowStripEl) {
-                topNowStripEl.textContent = text;
-            }
-        }
-
-        function renderNowNextOverlay(items) {
-            const container = document.getElementById('now-next-content');
-            const wrapper = document.getElementById('now-next');
-            if (!container || !wrapper) return;
-
-            if (!items || !items.length) {
-                container.className = 'now-next-empty';
-                container.textContent = 'No schedule for today.';
-                nowNextHasContent = true;
-                updateNowNextVisibility();
-                return;
-            }
-
-            const active = items.find((it) => it.status === 'active');
-            // Next = first future task (start time > current server_now time) sorted by planned_start_time
-            let next = null;
-            const sampleNow = items[0].server_now || null;
-            const currentTimeStr = sampleNow ? sampleNow.slice(11, 16) : null;
-
-            const future = items.filter((it) => {
-                if (!currentTimeStr) return false;
-                const start = (it.planned_start_time || '').slice(0, 5);
-                return start > currentTimeStr;
-            });
-            if (future.length) {
-                future.sort((a, b) => {
-                    const sa = (a.planned_start_time || '').slice(0, 5);
-                    const sb = (b.planned_start_time || '').slice(0, 5);
-                    return sa.localeCompare(sb);
-                });
-                next = future[0];
-            }
-
-            if (!active && !next) {
-                container.className = 'now-next-empty';
-                container.textContent = 'No active or upcoming tasks right now.';
-                nowNextHasContent = true;
-                updateNowNextVisibility();
-                return;
-            }
-
-            container.className = '';
-            container.innerHTML = '';
-
-            nowNextHasContent = true;
-
-            if (active) {
-                const nowBlock = document.createElement('div');
-                nowBlock.className = 'now-block';
-
-                const nowName = document.createElement('div');
-                nowName.className = 'now-name';
-                nowName.textContent = active.task_name || '';
-
-                const nowMeta = document.createElement('div');
-                nowMeta.className = 'now-meta-row';
-                const start = (active.planned_start_time || '').slice(0, 5);
-                const end = (active.planned_end_time || '').slice(0, 5);
-                const windowSpan = document.createElement('span');
-                windowSpan.textContent = `${start}–${end}`;
-                const countdownSpan = document.createElement('span');
-                countdownSpan.id = 'now-next-countdown';
-                const rem =
-                    typeof active.remaining_seconds === 'number'
-                        ? active.remaining_seconds
-                        : null;
-                countdownSpan.textContent = rem != null ? formatRemaining(rem) : '';
-
-                nowMeta.appendChild(windowSpan);
-                nowMeta.appendChild(countdownSpan);
-
-                nowBlock.appendChild(nowName);
-                nowBlock.appendChild(nowMeta);
-                container.appendChild(nowBlock);
-
-                if (rem != null && nowNextCountdownId === null) {
-                    let localRem = rem;
-                    nowNextCountdownId = setInterval(() => {
-                        const span = document.getElementById('now-next-countdown');
-                        if (!span) return;
-                        localRem = Math.max(0, localRem - 1);
-                        span.textContent = formatRemaining(localRem);
-                        if (localRem <= 0) {
-                            clearInterval(nowNextCountdownId);
-                            nowNextCountdownId = null;
-                        }
-                    }, 1000);
-                }
-            }
-
-            if (next) {
-                const nextBlock = document.createElement('div');
-                nextBlock.className = 'next-block';
-
-                const label = document.createElement('div');
-                label.className = 'next-label';
-                label.textContent = 'Next';
-
-                const name = document.createElement('div');
-                name.className = 'next-name';
-                name.textContent = next.task_name || '';
-
-                const time = document.createElement('div');
-                time.className = 'next-time';
-                const nStart = (next.planned_start_time || '').slice(0, 5);
-                const nEnd = (next.planned_end_time || '').slice(0, 5);
-                time.textContent = nStart && nEnd ? `${nStart}–${nEnd}` : nStart || '';
-
-                nextBlock.appendChild(label);
-                nextBlock.appendChild(name);
-                nextBlock.appendChild(time);
-                container.appendChild(nextBlock);
-            }
-            updateNowNextVisibility();
-        }
-
-        function markUserInteraction() {
-            lastInteractionAt = Date.now();
-            const wrapper = document.getElementById('now-next');
-            if (!wrapper) return;
-            if (!nowNextOverlayEnabled) {
-                wrapper.classList.add('now-next-hidden');
-                return;
-            }
-            if (nowNextDisplayMode === 'corner') {
-                return;
-            }
-            wrapper.classList.add('now-next-hidden');
-        }
-
-        function updateNowNextVisibility() {
-            const wrapper = document.getElementById('now-next');
-            if (!wrapper) return;
-            if (!nowNextOverlayEnabled || !nowNextHasContent) {
-                wrapper.classList.add('now-next-hidden');
-                return;
-            }
-            if (nowNextDisplayMode === 'corner') {
-                wrapper.classList.remove('now-next-hidden');
-                return;
-            }
-            const idleFor = Date.now() - lastInteractionAt;
-            if (idleFor >= NOW_NEXT_IDLE_MS) {
-                wrapper.classList.remove('now-next-hidden');
-            } else {
-                wrapper.classList.add('now-next-hidden');
-            }
-        }
-
-        function stopAlarm() {
-            if (alarmEscalationTimeoutId !== null) {
-                clearTimeout(alarmEscalationTimeoutId);
-                alarmEscalationTimeoutId = null;
-            }
-            if (alarmOscillator) {
-                try {
-                    alarmOscillator.stop();
-                } catch (e) {}
-                alarmOscillator.disconnect();
-                alarmOscillator = null;
-            }
-        }
-
-        function startAlarmAfterDelay() {
-            if (!alertOverlay) return;
-            if (alarmEscalationTimeoutId !== null) {
-                clearTimeout(alarmEscalationTimeoutId);
-            }
-            alarmEscalationTimeoutId = setTimeout(() => {
-                // Start simple continuous beep using Web Audio API
-                try {
-                    if (!alarmContextReady || !alarmAudioContext) return;
-                    const osc = alarmAudioContext.createOscillator();
-                    const gain = alarmAudioContext.createGain();
-                    const sound = alarmConfig && alarmConfig.sound ? alarmConfig.sound : 'beep';
-                    const volVal =
-                        alarmConfig && typeof alarmConfig.volume_percent === 'number'
-                            ? alarmConfig.volume_percent
-                            : 12;
-                    const volNorm = Math.max(0, Math.min(100, volVal)) / 100;
-                    if (sound === 'chime') {
-                        osc.type = 'sine';
-                        osc.frequency.value = 660; // Hz
-                    } else {
-                        osc.type = 'square';
-                        osc.frequency.value = 880; // Hz
-                    }
-                    gain.gain.value = volNorm;
-                    osc.connect(gain);
-                    gain.connect(alarmAudioContext.destination);
-                    osc.start();
-                    alarmOscillator = osc;
-                } catch (e) {
-                    console.error('Failed to start alarm audio', e);
-                }
-            }, ALERT_ESCALATION_DELAY_MS);
-        }
-
-        function unlockAlarmAudio() {
-            try {
-                const AudioCtx = window.AudioContext || window.webkitAudioContext;
-                if (!AudioCtx) return;
-                if (!alarmAudioContext) {
-                    alarmAudioContext = new AudioCtx();
-                }
-                if (alarmAudioContext.state === 'suspended') {
-                    alarmAudioContext.resume();
-                }
-                alarmContextReady = true;
-            } catch (e) {
-                console.error('Failed to unlock alarm audio', e);
-            } finally {
-                document.removeEventListener('click', unlockAlarmAudio);
-            }
-        }
-
-        document.addEventListener('click', unlockAlarmAudio);
-
-        function hideAlert() {
-            if (!alertOverlay) return;
-            alertOverlay.classList.add('hidden');
-            stopAlarm();
-        }
-
-        function showAlertForItem(item) {
-            if (!alertOverlay) return;
-            lastAlertedInstanceId = item.id;
-            const start = (item.planned_start_time || '').slice(0, 5);
-            const end = (item.planned_end_time || '').slice(0, 5);
-            if (alertTaskNameEl) {
-                alertTaskNameEl.textContent = item.task_name || '';
-            }
-            if (alertTaskWindowEl) {
-                alertTaskWindowEl.textContent = start && end ? ` ${start}–${end}` : '';
-            }
-            alertOverlay.classList.remove('hidden');
-            // PA-013: log that an alert interaction started
-            try {
-                fetch(`/schedule/instances/${item.id}/interactions/start`, {
-                    method: 'POST',
-                }).catch((err) => {
-                    console.error('Failed to start interaction log', err);
-                });
-            } catch (e) {
-                console.error('Failed to start interaction log', e);
-            }
-            startAlarmAfterDelay();
-        }
-
-        if (alertDismissBtn) {
-            alertDismissBtn.addEventListener('click', () => {
-                // PA-011: Acknowledge alert, log event, then hide
-                const instanceId = lastAlertedInstanceId;
-                const stage = alarmOscillator ? 'alarm' : 'visual';
-                if (instanceId != null) {
-                    clearSnoozeRealert(instanceId);
-                    const url = `/schedule/instances/${instanceId}/acknowledge?stage=${encodeURIComponent(
-                        stage,
-                    )}`;
-                    fetch(url, {
-                        method: 'POST',
-                    })
-                        .then(() => {
-                            if (typeof loadHistory === 'function') {
-                                loadHistory();
-                            }
-                        })
-                        .catch((err) => {
-                            console.error('Failed to acknowledge alert', err);
-                        });
-                }
-                hideAlert();
-            });
-        }
-
-        function updateAlarmVolumeLabel() {
-            if (!alarmVolumeLabel || !alarmVolumeInput) return;
-            alarmVolumeLabel.textContent = `Volume: ${alarmVolumeInput.value || '0'}%`;
-        }
-
-        async function loadAlarmConfig() {
-            if (!alarmSoundSelect || !alarmVolumeInput) return;
-            try {
-                const res = await fetch('/schedule/alarm-config');
-                if (!res.ok) throw new Error('Failed to load alarm config');
-                const data = await res.json();
-                alarmConfig = data;
-                if (data.sound) {
-                    alarmSoundSelect.value = data.sound;
-                }
-                const vol = typeof data.volume_percent === 'number' ? data.volume_percent : 12;
-                alarmVolumeInput.value = String(vol);
-                updateAlarmVolumeLabel();
-            } catch (err) {
-                console.error('Failed to load alarm config', err);
-            }
-        }
-
-        async function saveAlarmConfig() {
-            if (!alarmSoundSelect || !alarmVolumeInput) return;
-            const payload = {
-                sound: alarmSoundSelect.value || 'beep',
-                volume_percent: parseInt(alarmVolumeInput.value || '12', 10),
-            };
-            try {
-                const res = await fetch('/schedule/alarm-config', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || 'Failed to save alarm config');
-                }
-                const data = await res.json();
-                alarmConfig = data;
-                alarmVolumeInput.value = String(data.volume_percent ?? 12);
-                updateAlarmVolumeLabel();
-                scheduleStatusEl.textContent = 'Alarm settings saved.';
-                scheduleStatusEl.className = 'status-text ok';
-            } catch (err) {
-                console.error(err);
-                scheduleStatusEl.textContent = 'Error saving alarm settings.';
-                scheduleStatusEl.className = 'status-text error';
-            }
-        }
-
-        function playTestAlarm() {
-            if (!alarmContextReady || !alarmAudioContext) return;
-            try {
-                const osc = alarmAudioContext.createOscillator();
-                const gain = alarmAudioContext.createGain();
-                const sound =
-                    (alarmSoundSelect && alarmSoundSelect.value) || alarmConfig.sound || 'beep';
-                const volValRaw = alarmVolumeInput
-                    ? parseInt(alarmVolumeInput.value || '12', 10)
-                    : alarmConfig.volume_percent ?? 12;
-                const volVal = Number.isFinite(volValRaw) ? volValRaw : 12;
-                const volNorm = Math.max(0, Math.min(100, volVal)) / 100;
-                if (sound === 'chime') {
-                    osc.type = 'sine';
-                    osc.frequency.value = 660;
-                } else {
-                    osc.type = 'square';
-                    osc.frequency.value = 880;
-                }
-                gain.gain.value = volNorm;
-                osc.connect(gain);
-                gain.connect(alarmAudioContext.destination);
-                osc.start();
-                setTimeout(() => {
-                    try {
-                        osc.stop();
-                    } catch (e) {}
-                    osc.disconnect();
-                }, 700);
-            } catch (e) {
-                console.error('Failed to play test alarm', e);
-            }
-        }
-
-        if (alarmVolumeInput) {
-            alarmVolumeInput.addEventListener('input', updateAlarmVolumeLabel);
-        }
-        if (alarmSaveBtn) {
-            alarmSaveBtn.addEventListener('click', async () => {
-                await saveAlarmConfig();
-            });
-        }
-        if (alarmTestBtn) {
-            alarmTestBtn.addEventListener('click', () => {
-                playTestAlarm();
-            });
-        }
-
-        if (topNowStripEl && scheduleListEl) {
-            topNowStripEl.addEventListener('click', () => {
-                const targetRow =
-                    scheduleListEl.querySelector('.schedule-item-active') ||
-                    scheduleListEl.querySelector('.schedule-item-paused');
-                if (targetRow && typeof targetRow.scrollIntoView === 'function') {
-                    try {
-                        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    } catch (e) {
-                        targetRow.scrollIntoView();
-                    }
-                }
-            });
-        }
-
-        if (tabButtons && tabButtons.length) {
-            tabButtons.forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const target = btn.getAttribute('data-view') || 'today';
-                    switchView(target);
-                });
-            });
-            // Ensure initial view is Today
-            switchView('today');
-        }
-
-        async function addAdhocTodayTask() {
-            if (!scheduleStatusEl || !addTodayNameInput || !addTodayStartInput) return;
-
-            const name = (addTodayNameInput.value || '').trim();
-            const category = (addTodayCategoryInput?.value || '').trim() || 'misc';
-            const durationStr = addTodayDurationInput?.value || '';
-            const start = addTodayStartInput.value;
-
-            const duration = parseInt(durationStr || '0', 10);
-
-            if (!name || !start) {
-                scheduleStatusEl.textContent =
-                    'Please provide a name and start time to add a task for today.';
-                scheduleStatusEl.className = 'status-text error';
-                return;
-            }
-
-            const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 60;
-
-            const payload = {
-                name,
-                category,
-                duration_minutes: safeDuration,
-                start_time: `${start}:00`,
-            };
-
-            try {
-                const res = await fetch('/schedule/adhoc-today', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || 'Failed to add task for today');
-                }
-
-                addTodayNameInput.value = '';
-                if (addTodayCategoryInput) addTodayCategoryInput.value = '';
-                if (addTodayDurationInput) addTodayDurationInput.value = '';
-                if (addTodayStartInput) addTodayStartInput.value = '';
-
-                scheduleStatusEl.textContent = 'Task added to today.';
-                scheduleStatusEl.className = 'status-text ok';
-
-                await loadSchedule();
-            } catch (err) {
-                console.error(err);
-                scheduleStatusEl.textContent = 'Error adding task to today.';
-                scheduleStatusEl.className = 'status-text error';
-            }
-        }
-
-        if (addTodayBtn) {
-            addTodayBtn.addEventListener('click', async () => {
-                await addAdhocTodayTask();
-            });
-        }
-
-        if (templateSearchInput) {
-            templateSearchInput.addEventListener('input', () => {
-                applyTemplateFilterAndRender();
-            });
-        }
-
-        async function loadTasks() {
-            try {
-                const res = await fetch('/tasks/');
-                if (!res.ok) throw new Error('Failed to load tasks');
-                const data = await res.json();
-                templateTasksAll = Array.isArray(data) ? data : [];
-                applyTemplateFilterAndRender();
-            } catch (err) {
-                console.error(err);
-                tasksListEl.innerHTML = '<div class="hint">Could not load templates. Check that the backend is running.</div>';
-            }
-        }
-
-        function applyTemplateFilterAndRender() {
-            if (!tasksListEl) return;
-            const all = Array.isArray(templateTasksAll) ? templateTasksAll : [];
-            let tasks = all.slice();
-            const q = templateSearchInput && templateSearchInput.value
-                ? templateSearchInput.value.toLowerCase().trim()
-                : '';
-            if (q) {
-                tasks = tasks.filter((t) => {
-                    const name = (t.name || '').toLowerCase();
-                    const cat = (t.category || '').toLowerCase();
-                    return name.includes(q) || cat.includes(q);
-                });
-            }
-            renderTasks(tasks);
-        }
-
-        function renderTasks(tasks) {
-            tasksListEl.innerHTML = '';
-            const all = Array.isArray(templateTasksAll) ? templateTasksAll : [];
-            if (!all.length) {
-                tasksListEl.innerHTML = '<div class="hint">No templates yet. Use the form on the left to create your first one.</div>';
-                return;
-            }
-            if (!tasks.length) {
-                tasksListEl.innerHTML = '<div class="hint">No templates match your search.</div>';
-                return;
-            }
-
-            const groups = new Map();
-            for (const t of tasks) {
-                const rawCat = (t.category || '').trim();
-                const catKey = rawCat || 'Uncategorized';
-                if (!groups.has(catKey)) {
-                    groups.set(catKey, []);
-                }
-                groups.get(catKey).push(t);
-            }
-            const sortedCats = Array.from(groups.keys()).sort((a, b) =>
-                a.toLowerCase().localeCompare(b.toLowerCase())
-            );
-
-            for (const catName of sortedCats) {
-                const catTasks = groups.get(catName) || [];
-                const groupEl = document.createElement('div');
-                groupEl.className = 'task-group';
-
-                const headerEl = document.createElement('button');
-                headerEl.type = 'button';
-                headerEl.className = 'task-group-header';
-
-                const titleWrap = document.createElement('div');
-                titleWrap.className = 'task-group-title-wrap';
-
-                const caretEl = document.createElement('span');
-                caretEl.className = 'task-group-caret';
-                caretEl.textContent = '▾';
-
-                const titleEl = document.createElement('span');
-                titleEl.className = 'task-group-title';
-                titleEl.textContent = catName;
-
-                titleWrap.appendChild(caretEl);
-                titleWrap.appendChild(titleEl);
-
-                const countEl = document.createElement('span');
-                countEl.className = 'task-group-count';
-                const count = catTasks.length;
-                countEl.textContent = `${count} template${count === 1 ? '' : 's'}`;
-
-                headerEl.appendChild(titleWrap);
-                headerEl.appendChild(countEl);
-
-                const bodyEl = document.createElement('div');
-                bodyEl.className = 'task-group-body';
-
-                headerEl.addEventListener('click', () => {
-                    groupEl.classList.toggle('collapsed');
-                });
-
-                groupEl.appendChild(headerEl);
-                groupEl.appendChild(bodyEl);
-                tasksListEl.appendChild(groupEl);
-
-                for (const t of catTasks) {
-                    const item = document.createElement('article');
-                    item.className = 'task-item';
-
-                    const header = document.createElement('div');
-                    header.className = 'task-item-header';
-
-                    const nameSpan = document.createElement('span');
-                    nameSpan.className = 'task-name';
-                    nameSpan.textContent = t.name;
-
-                    const durationSpan = document.createElement('span');
-                    durationSpan.textContent = `${t.default_duration_minutes} min`;
-                    durationSpan.style.fontVariantNumeric = 'tabular-nums';
-                    durationSpan.style.color = '#9ca3af';
-
-                    header.appendChild(nameSpan);
-                    header.appendChild(durationSpan);
-
-                    const badges = document.createElement('div');
-                    badges.className = 'badge-row';
-
-                    const cat = document.createElement('span');
-                    cat.className = 'badge';
-                    cat.textContent = `category: ${t.category}`;
-                    badges.appendChild(cat);
-
-                    if (t.recurrence_pattern) {
-                        const rec = document.createElement('span');
-                        rec.className = 'badge';
-                        rec.textContent = `recurrence: ${t.recurrence_pattern}`;
-                        badges.appendChild(rec);
-                    }
-
-                    if (t.preferred_time_window) {
-                        const win = document.createElement('span');
-                        win.className = 'badge';
-                        win.textContent = `window: ${t.preferred_time_window}`;
-                        badges.appendChild(win);
-                    }
-
-                    const alert = document.createElement('span');
-                    alert.className = 'badge';
-                    alert.textContent = `alert: ${t.default_alert_style}`;
-                    badges.appendChild(alert);
-
-                    const enabled = document.createElement('span');
-                    enabled.className = 'badge';
-                    enabled.textContent = t.enabled ? 'enabled' : 'disabled';
-                    badges.appendChild(enabled);
-
-                    const actions = document.createElement('div');
-                    actions.className = 'actions-row';
-
-                    const editBtn = document.createElement('button');
-                    editBtn.type = 'button';
-                    editBtn.className = 'action-btn edit';
-                    editBtn.textContent = 'Edit';
-                    editBtn.addEventListener('click', () => {
-                        editingTaskId = t.id;
-                        document.getElementById('name').value = t.name;
-                        document.getElementById('category').value = t.category;
-                        document.getElementById('default_duration_minutes').value = String(t.default_duration_minutes ?? '');
-                        document.getElementById('recurrence_pattern').value = t.recurrence_pattern ?? '';
-                        document.getElementById('preferred_time_window').value = t.preferred_time_window ?? '';
-                        document.getElementById('default_alert_style').value = t.default_alert_style || 'visual_then_alarm';
-                        document.getElementById('enabled').checked = !!t.enabled;
-                        submitBtn.textContent = 'Update template';
-                        statusEl.textContent = 'Editing existing template…';
-                        statusEl.className = 'status-text';
-                    });
-
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.type = 'button';
-                    deleteBtn.className = 'action-btn delete';
-                    deleteBtn.textContent = 'Delete';
-                    deleteBtn.addEventListener('click', async () => {
-                        const ok = window.confirm('Delete this template? This will remove it from future schedules.');
-                        if (!ok) return;
-                        try {
-                            const res = await fetch(`/tasks/${t.id}`, { method: 'DELETE' });
-                            if (!res.ok) {
-                                const text = await res.text();
-                                throw new Error(text || 'Failed to delete');
-                            }
-                            if (editingTaskId === t.id) {
-                                editingTaskId = null;
-                                form.reset();
-                                document.getElementById('enabled').checked = true;
-                                document.getElementById('default_alert_style').value = 'visual_then_alarm';
-                                submitBtn.textContent = 'Save template';
-                            }
-                            await loadTasks();
-                        } catch (err) {
-                            console.error(err);
-                            statusEl.textContent = 'Error deleting template.';
-                            statusEl.className = 'status-text error';
-                        }
-                    });
-
-                    actions.appendChild(editBtn);
-                    actions.appendChild(deleteBtn);
-
-                    item.appendChild(header);
-                    item.appendChild(badges);
-                    item.appendChild(actions);
-                    bodyEl.appendChild(item);
-                }
-            }
-        }
-
-        async function loadSchedule() {
-            if (!scheduleListEl) return;
-            try {
-                const res = await fetch('/schedule/today');
-                if (!res.ok) throw new Error('Failed to load schedule');
-                const data = await res.json();
-                renderSchedule(data);
-            } catch (err) {
-                console.error(err);
-                scheduleStatusEl.textContent = "Could not load today's schedule.";
-                scheduleStatusEl.className = 'status-text error';
-            }
-        }
-
-        function renderSchedule(items) {
-            if (!scheduleListEl) return;
-            clearCountdown();
-            scheduleStatusEl.className = 'status-text';
-            if (activeBannerEl) {
-                activeBannerEl.className = 'active-banner empty';
-                activeBannerEl.textContent = 'No active task right now.';
-            }
-            if (topNowStripEl) {
-                topNowStripEl.textContent = 'Now: —';
-                topNowStripEl.classList.remove('active', 'paused');
-            }
-            renderNowNextOverlay(items);
-
-            if (!items.length) {
-                scheduleListEl.innerHTML = '<div class="hint">No schedule for today yet. Add some templates to get started.</div>';
-                scheduleStatusEl.textContent = '';
-                return;
-            }
-            if (activeBannerEl || topNowStripEl) {
-                const pausedItem = items.find((item) => item.status === 'paused');
-                const activeItem = items.find((item) => item.status === 'active');
-                const bannerItem = pausedItem || activeItem;
-                if (bannerItem) {
-                    const start = (bannerItem.planned_start_time || '').slice(0, 5);
-                    const end = (bannerItem.planned_end_time || '').slice(0, 5);
-                    const isPaused = bannerItem.status === 'paused';
-                    const prefix = isPaused ? 'Paused: ' : 'Active now: ';
-                    activeBannerBase = `${prefix}${bannerItem.task_name} (${start}–${end})`;
-
-                    const hasServerRemaining =
-                        typeof bannerItem.remaining_seconds === 'number' &&
-                        Number.isFinite(bannerItem.remaining_seconds);
-                    // Do not show a ticking countdown while paused; only for active tasks.
-                    activeRemainingSeconds = !isPaused && hasServerRemaining
-                        ? bannerItem.remaining_seconds
-                        : null;
-
-                    if (activeBannerEl) {
-                        activeBannerEl.className = 'active-banner';
-                    }
-                    if (topNowStripEl) {
-                        topNowStripEl.classList.remove('active', 'paused');
-                        topNowStripEl.classList.add(isPaused ? 'paused' : 'active');
-                    }
-                    updateActiveBannerText();
-
-                    // Visual alert when a task becomes active (PA-009)
-                    if (activeItem && activeItem.id !== lastAlertedInstanceId) {
-                        showAlertForItem(activeItem);
-                    }
-
-                    if (bannerItem.status === 'active' && activeRemainingSeconds != null) {
-                        countdownIntervalId = setInterval(() => {
-                            if (activeRemainingSeconds == null) return;
-                            activeRemainingSeconds -= 1;
-                            if (activeRemainingSeconds <= 0) {
-                                activeRemainingSeconds = 0;
-                                updateActiveBannerText();
-                                clearInterval(countdownIntervalId);
-                                countdownIntervalId = null;
-                                // Force an immediate schedule refresh so that
-                                // when the timer reaches zero, any next task
-                                // becomes active and its alert is shown.
-                                loadSchedule();
-                                return;
-                            }
-                            updateActiveBannerText();
-                        }, 1000);
-                    }
-                } else {
-                    hideAlert();
-                }
-            }
-            scheduleListEl.innerHTML = '';
-            for (const item of items) {
-                const row = document.createElement('div');
-                row.className = 'schedule-item';
-                if (item.status === 'cancelled') {
-                    row.classList.add('schedule-item-cancelled');
-                }
-                if (item.status === 'active') {
-                    row.classList.add('schedule-item-active');
-                }
-                if (item.status === 'paused') {
-                    row.classList.add('schedule-item-paused');
-                }
-
-                const main = document.createElement('div');
-                main.className = 'schedule-main';
-
-                const title = document.createElement('div');
-                title.className = 'schedule-name';
-                title.textContent = item.task_name;
-
-                const meta = document.createElement('div');
-                meta.className = 'schedule-meta';
-                const adhocSuffix = item.is_adhoc ? ' · adhoc' : '';
-                meta.textContent = `${item.category} · ${item.status}${adhocSuffix}`;
-
-                main.appendChild(title);
-                main.appendChild(meta);
-
-                const controls = document.createElement('div');
-                controls.className = 'schedule-controls';
-
-                const timeInput = document.createElement('input');
-                timeInput.type = 'time';
-                const start = (item.planned_start_time || '').slice(0, 5);
-                if (start) {
-                    timeInput.value = start;
-                }
-
-                const saveBtn = document.createElement('button');
-                saveBtn.type = 'button';
-                saveBtn.className = 'action-btn edit';
-                saveBtn.textContent = 'Save';
-
-                const disableBtn = document.createElement('button');
-                disableBtn.type = 'button';
-                disableBtn.className = 'action-btn delete';
-                if (item.status === 'cancelled') {
-                    disableBtn.textContent = 'Cancelled';
-                    disableBtn.disabled = true;
-                } else {
-                    disableBtn.textContent = 'Disable today';
-                }
-
-                const pauseResumeBtn = document.createElement('button');
-                pauseResumeBtn.type = 'button';
-                pauseResumeBtn.className = 'action-btn';
-                let pauseResumeMode = null;
-                if (item.status === 'active') {
-                    pauseResumeMode = 'pause';
-                    pauseResumeBtn.textContent = 'Pause';
-                } else if (item.status === 'paused') {
-                    pauseResumeMode = 'resume';
-                    pauseResumeBtn.textContent = 'Resume';
-                }
-
-                controls.appendChild(timeInput);
-                controls.appendChild(saveBtn);
-                if (pauseResumeMode !== null) {
-                    controls.appendChild(pauseResumeBtn);
-                }
-                // Snooze options for active/paused task: extend end time only (Option A)
-                if (item.status === 'active' || item.status === 'paused') {
-                    const snoozeContainer = document.createElement('div');
-                    snoozeContainer.style.display = 'flex';
-                    snoozeContainer.style.gap = '0.25rem';
-                    const snoozeOptions = [5, 10, 15];
-                    for (const minutes of snoozeOptions) {
-                        const snoozeBtn = document.createElement('button');
-                        snoozeBtn.type = 'button';
-                        snoozeBtn.className = 'action-btn';
-                        snoozeBtn.textContent = `+${minutes}m`;
-                        snoozeBtn.addEventListener('click', async () => {
-                            const payload = { minutes };
-                            const stage = alarmOscillator ? 'alarm' : 'visual';
-                            try {
-                                const url = `/schedule/instances/${item.id}/snooze?stage=${encodeURIComponent(
-                                    stage,
-                                )}`;
-                                const res = await fetch(url, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(payload),
-                                });
-                                if (!res.ok) {
-                                    const text = await res.text();
-                                    throw new Error(text || 'Failed to snooze task');
-                                }
-                                hideAlert();
-                                scheduleStatusEl.textContent = `Task snoozed by +${minutes} minutes.`;
-                                scheduleStatusEl.className = 'status-text ok';
-                                await loadSchedule();
-                                await loadHistory();
-                                // Schedule a re-alert for this same task after the snooze period.
-                                const ms = minutes * 60 * 1000;
-                                clearSnoozeRealert(item.id);
-                                snoozeRealertTimeouts[item.id] = setTimeout(async () => {
-                                    try {
-                                        const res2 = await fetch('/schedule/today');
-                                        if (!res2.ok) {
-                                            throw new Error('Failed to reload schedule after snooze');
-                                        }
-                                        const data2 = await res2.json();
-                                        const refreshed = data2.find((it) => it.id === item.id);
-                                        if (!refreshed) return;
-                                        if (
-                                            refreshed.status !== 'active' &&
-                                            refreshed.status !== 'paused'
-                                        ) {
-                                            return;
-                                        }
-                                        showAlertForItem(refreshed);
-                                    } catch (e) {
-                                        console.error('Failed to re-alert after snooze', e);
-                                    } finally {
-                                        clearSnoozeRealert(item.id);
-                                    }
-                                }, ms);
-                            } catch (err) {
-                                console.error(err);
-                                scheduleStatusEl.textContent = 'Error snoozing task.';
-                                scheduleStatusEl.className = 'status-text error';
-                            }
-                        });
-                        snoozeContainer.appendChild(snoozeBtn);
-                    }
-                    controls.appendChild(snoozeContainer);
-                }
-                controls.appendChild(disableBtn);
-
-                row.appendChild(main);
-                row.appendChild(controls);
-                scheduleListEl.appendChild(row);
-
-                saveBtn.addEventListener('click', async () => {
-                    const newTime = timeInput.value;
-                    if (!newTime) {
-                        scheduleStatusEl.textContent = 'Please choose a start time before saving.';
-                        scheduleStatusEl.className = 'status-text error';
-                        return;
-                    }
-                    const payload = { planned_start_time: `${newTime}:00` };
-                    try {
-                        const res = await fetch(`/schedule/instances/${item.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload),
-                        });
-                        if (!res.ok) {
-                            const text = await res.text();
-                            throw new Error(text || 'Failed to update schedule');
-                        }
-                        scheduleStatusEl.textContent = 'Schedule updated.';
-                        scheduleStatusEl.className = 'status-text ok';
-                        await loadSchedule();
-                    } catch (err) {
-                        console.error(err);
-                        scheduleStatusEl.textContent = 'Error updating schedule.';
-                        scheduleStatusEl.className = 'status-text error';
-                    }
-                });
-
-                disableBtn.addEventListener('click', async () => {
-                    if (item.status === 'cancelled') return;
-                    const ok = window.confirm('Disable this task for today?');
-                    if (!ok) return;
-                    const payload = { status: 'cancelled' };
-                    try {
-                        const res = await fetch(`/schedule/instances/${item.id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload),
-                        });
-                        if (!res.ok) {
-                            const text = await res.text();
-                            throw new Error(text || 'Failed to disable for today');
-                        }
-                        scheduleStatusEl.textContent = 'Task disabled for today.';
-                        scheduleStatusEl.className = 'status-text ok';
-                        await loadSchedule();
-                    } catch (err) {
-                        console.error(err);
-                        scheduleStatusEl.textContent = 'Error disabling task for today.';
-                        scheduleStatusEl.className = 'status-text error';
-                    }
-                });
-
-                if (pauseResumeMode !== null) {
-                    pauseResumeBtn.addEventListener('click', async () => {
-                        const newStatus = pauseResumeMode === 'pause' ? 'paused' : 'active';
-                        const payload = { status: newStatus };
-                        try {
-                            const res = await fetch(`/schedule/instances/${item.id}`, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(payload),
-                            });
-                            if (!res.ok) {
-                                const text = await res.text();
-                                throw new Error(text || 'Failed to update status');
-                            }
-                            scheduleStatusEl.textContent =
-                                newStatus === 'paused' ? 'Task paused.' : 'Task resumed.';
-                            scheduleStatusEl.className = 'status-text ok';
-                            if (newStatus === 'paused') {
-                                hideAlert();
-                            }
-                            await loadSchedule();
-                        } catch (err) {
-                            console.error(err);
-                            scheduleStatusEl.textContent = 'Error updating task status.';
-                            scheduleStatusEl.className = 'status-text error';
-                        }
-                    });
-                }
-            }
-        }
-
-        function renderHistory(items) {
-            if (!historyListEl) return;
-            if (!items.length) {
-                historyListEl.innerHTML =
-                    '<div class="hint">No interactions yet. Recent alerts will show here.</div>';
-                return;
-            }
-            historyListEl.innerHTML = '';
-            for (const item of items) {
-                const row = document.createElement('div');
-                row.className = 'history-item';
-
-                const main = document.createElement('div');
-                main.className = 'history-main';
-
-                const task = document.createElement('div');
-                task.className = 'history-task';
-                task.textContent = item.task_name || '';
-
-                const meta = document.createElement('div');
-                meta.className = 'history-meta';
-                const resp = item.response_type || 'none';
-                const stage = item.response_stage || '';
-                const metaText = document.createElement('span');
-                metaText.textContent = `${item.category} · ${item.alert_type} → ${resp}${
-                    stage ? ' (' + stage + ')' : ''
-                }`;
-                const respBadge = document.createElement('span');
-                respBadge.className = 'history-badge';
-                respBadge.textContent = resp;
-                const respLower = resp.toLowerCase();
-                if (respLower === 'acknowledge' || respLower === 'ack') {
-                    respBadge.classList.add('history-badge-ack');
-                } else if (respLower === 'snooze') {
-                    respBadge.classList.add('history-badge-snooze');
-                } else if (respLower === 'skip') {
-                    respBadge.classList.add('history-badge-skip');
-                } else {
-                    respBadge.classList.add('history-badge-none');
-                }
-                meta.appendChild(metaText);
-                meta.appendChild(respBadge);
-
-                main.appendChild(task);
-                main.appendChild(meta);
-
-                const times = document.createElement('div');
-                times.className = 'history-times';
-                const started = (item.alert_started_at || '').slice(11, 16);
-                const responded = item.responded_at ? item.responded_at.slice(11, 16) : '';
-                times.textContent = responded ? `${started} → ${responded}` : `${started} → …`;
-
-                row.appendChild(main);
-                row.appendChild(times);
-                historyListEl.appendChild(row);
-            }
-        }
-
-        function updateHistoryCategoryOptions() {
-            if (!historyCategorySelect) return;
-            const seen = new Set();
-            for (const item of historyItemsAll) {
-                const cat = (item.category || '').trim();
-                if (!cat) continue;
-                seen.add(cat);
-            }
-            const sorted = Array.from(seen).sort((a, b) => a.localeCompare(b));
-            historyCategorySelect.innerHTML = '<option value="">All categories</option>';
-            for (const cat of sorted) {
-                const opt = document.createElement('option');
-                opt.value = cat;
-                opt.textContent = cat;
-                historyCategorySelect.appendChild(opt);
-            }
-        }
-
-        function applyHistoryFilters() {
-            if (!historyListEl) return;
-            let items = historyItemsAll.slice();
-
-            const getDateOnly = (ts) => {
-                if (!ts || typeof ts !== 'string') return null;
-                return ts.slice(0, 10);
-            };
-
-            const fromVal = historyFromInput && historyFromInput.value
-                ? historyFromInput.value
-                : '';
-            const toVal = historyToInput && historyToInput.value ? historyToInput.value : '';
-            const catVal = historyCategorySelect ? historyCategorySelect.value : '';
-
-            if (fromVal) {
-                items = items.filter((item) => {
-                    const d = getDateOnly(item.alert_started_at || item.responded_at);
-                    return d && d >= fromVal;
-                });
-            }
-            if (toVal) {
-                items = items.filter((item) => {
-                    const d = getDateOnly(item.alert_started_at || item.responded_at);
-                    return d && d <= toVal;
-                });
-            }
-            if (catVal) {
-                items = items.filter((item) => (item.category || '') === catVal);
-            }
-
-            items.sort((a, b) => {
-                const aTs = a.alert_started_at || a.responded_at || '';
-                const bTs = b.alert_started_at || b.responded_at || '';
-                if (aTs < bTs) return 1;
-                if (aTs > bTs) return -1;
-                const aId = typeof a.id === 'number' ? a.id : 0;
-                const bId = typeof b.id === 'number' ? b.id : 0;
-                return bId - aId;
-            });
-
-            renderHistory(items);
-        }
-
-        async function loadHistory() {
-            if (!historyListEl) return;
-            try {
-                const res = await fetch('/schedule/interactions/recent?limit=50');
-                if (!res.ok) throw new Error('Failed to load history');
-                const data = await res.json();
-                historyItemsAll = Array.isArray(data) ? data : [];
-                updateHistoryCategoryOptions();
-                applyHistoryFilters();
-            } catch (err) {
-                console.error('Failed to load history', err);
-            }
-        }
-
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            statusEl.textContent = '';
-            statusEl.className = 'status-text';
-
-            const name = (document.getElementById('name').value || '').trim();
-            const category = (document.getElementById('category').value || '').trim();
-            const durationStr = document.getElementById('default_duration_minutes').value;
-            const recurrence = (document.getElementById('recurrence_pattern').value || '').trim() || null;
-            const windowPref = (document.getElementById('preferred_time_window').value || '').trim() || null;
-            const alertStyle = document.getElementById('default_alert_style').value;
-            const enabled = document.getElementById('enabled').checked;
-
-            const duration = parseInt(durationStr, 10);
-            if (!name || !category || !Number.isFinite(duration) || duration <= 0) {
-                statusEl.textContent = 'Please provide name, category, and a positive duration.';
-                statusEl.classList.add('error');
-                return;
-            }
-
-            const payload = {
-                name,
-                category,
-                default_duration_minutes: duration,
-                recurrence_pattern: recurrence,
-                preferred_time_window: windowPref,
-                default_alert_style: alertStyle,
-                enabled,
-            };
-
-            submitBtn.disabled = true;
-            try {
-                const url = editingTaskId === null ? '/tasks/' : `/tasks/${editingTaskId}`;
-                const method = editingTaskId === null ? 'POST' : 'PUT';
-                const res = await fetch(url, {
-                    method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || 'Failed to save template');
-                }
-                form.reset();
-                document.getElementById('enabled').checked = true;
-                document.getElementById('default_alert_style').value = 'visual_then_alarm';
-                if (editingTaskId === null) {
-                    statusEl.textContent = 'Template saved.';
-                } else {
-                    statusEl.textContent = 'Template updated.';
-                }
-                statusEl.classList.add('ok');
-                editingTaskId = null;
-                submitBtn.textContent = 'Save template';
-                await loadTasks();
-            } catch (err) {
-                console.error(err);
-                statusEl.textContent = 'Error saving template. See console for details.';
-                statusEl.classList.add('error');
-            } finally {
-                submitBtn.disabled = false;
-            }
-        });
-        
-        if (overlayEnabledInput) {
-            nowNextOverlayEnabled = overlayEnabledInput.checked;
-            overlayEnabledInput.addEventListener('change', () => {
-                nowNextOverlayEnabled = overlayEnabledInput.checked;
-                if (!nowNextOverlayEnabled) {
-                    const wrapper = document.getElementById('now-next');
-                    if (wrapper) {
-                        wrapper.classList.add('now-next-hidden');
-                    }
-                } else {
-                    markUserInteraction();
-                    updateNowNextVisibility();
-                }
-            });
-        }
-        
-        if (overlayModeSelect) {
-            nowNextDisplayMode = overlayModeSelect.value || 'auto';
-            const initialWrapper = document.getElementById('now-next');
-            if (initialWrapper && nowNextDisplayMode === 'corner') {
-                initialWrapper.classList.add('now-next-corner');
-            }
-            overlayModeSelect.addEventListener('change', () => {
-                nowNextDisplayMode = overlayModeSelect.value || 'auto';
-                const wrapper = document.getElementById('now-next');
-                if (!wrapper) return;
-                if (nowNextDisplayMode === 'corner') {
-                    wrapper.classList.add('now-next-corner');
-                } else {
-                    wrapper.classList.remove('now-next-corner');
-                }
-                updateNowNextVisibility();
-            });
-        }
-
-        if (historyFromInput) {
-            historyFromInput.addEventListener('change', () => {
-                applyHistoryFilters();
-            });
-        }
-        if (historyToInput) {
-            historyToInput.addEventListener('change', () => {
-                applyHistoryFilters();
-            });
-        }
-        if (historyCategorySelect) {
-            historyCategorySelect.addEventListener('change', () => {
-                applyHistoryFilters();
-            });
-        }
-
-        // Global user interaction listeners to hide the Now & Next overlay immediately
-        // and reset the idle timer whenever the user interacts with the UI.
-        document.addEventListener('click', () => {
-            markUserInteraction();
-        });
-        document.addEventListener('keydown', () => {
-            markUserInteraction();
-        });
-        document.addEventListener('mousemove', () => {
-            markUserInteraction();
-        });
-        document.addEventListener('touchstart', () => {
-            markUserInteraction();
-        });
-
-        // Periodically check whether the user has been idle long enough to
-        // show the Now & Next overlay as floating cards.
-        setInterval(updateNowNextVisibility, 500);
-
-        updateHudClock();
-        setInterval(updateHudClock, 1000);
-
-        loadTasks();
-        loadSchedule();
-        loadAlarmConfig();
-        loadHistory();
-        // High-frequency polling so the active task and alerts update almost in real time (PA-005)
-        setInterval(loadSchedule, 1000);
-    </script>
-</body>
-</html>
+    <script src="/static/js/today.js"></script>
+    <script src="/static/js/planner.js"></script>
+    <script src="/static/js/history.js"></script>
+    <script src="/static/js/ai.js"></script>
+    <script src="/static/js/main.js"></script>
+    </body>
+    </html>
 """
 app.include_router(tasks.router)
 app.include_router(schedule.router)
+app.include_router(ai.router)

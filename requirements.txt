@@ -4,3 +4,6 @@ SQLAlchemy
 alembic
 pydantic
 python-dotenv
+httpx>=0.24,<0.28
+httpx>=0.24,<0.28
+certifi

@@ -314,6 +314,75 @@ PA-021 will use DeepSeek AI as the LLM provider via its HTTP API, with the API k
 
 ---
 
+### PA-031 – AI-Powered Template Designer
+**As** Nasif  
+**I want** to describe my routine in natural language and get suggested task templates  
+**So that** I can quickly set up or refine my schedule without manually designing every block.
+
+**Acceptance Criteria**
+- [x] In the Planner view, I can type a free-text description (e.g. "coding, exercise, and chores on weekdays with 45 min focus blocks") and submit it to the AI.
+- [x] The system calls the configured DeepSeek API using environment variables, not hardcoded keys.
+- [x] I see 3–7 suggested templates, each with name, category, duration, recurrence, preferred time window, and alert style.
+- [x] Clicking a suggestion pre-fills the existing "New Task Template" form so I can review and save or discard it.
+- [x] I can also select an existing template and ask the AI to "refine" it (e.g. shorten evening routine), and see proposed changes to duration / time window before applying them.
+
+---
+
+### PA-032 – “What Should I Do Now?” Assistant
+**As** Nasif  
+**I want** a short AI hint about what to focus on right now based on my current schedule  
+**So that** I can make better use of gaps and avoid defaulting to distractions.
+
+**Acceptance Criteria**
+- [x] On the Today view I see a small "What should I do now?" area with a button to ask the assistant.
+- [x] When I ask, the system sends current time, active task (if any), next few tasks, and recent interaction patterns to the AI.
+- [x] The AI returns a concise 1–2 sentence suggestion (max ~50 words) which is displayed under the prompt area.
+- [x] If the AI call fails, I see a graceful error hint and the rest of the dashboard continues working.
+
+---
+
+### PA-033 – AI Insights on Recent History
+**As** Nasif  
+**I want** AI-generated insights on my recent alerts and responses  
+**So that** I can see patterns like “I always skip evening gym” and adjust my plan.
+
+**Acceptance Criteria**
+- [x] On the History & Insights tab, I can request an “AI summary” for a chosen period (e.g. last 7 days).
+- [x] The backend aggregates interactions (by category, response type, and time of day) and sends only summarized data to the AI, not raw rows.
+- [x] The AI returns 3–5 bullet insights about my behavior and 2–3 concrete recommendations (e.g. move gym earlier, shorten evening blocks).
+- [x] Insights and recommendations are shown in a dedicated “AI Insights” card beneath the interaction list.
+- [x] Nothing is changed automatically; I must still edit templates or schedules myself (or via other user stories).
+
+---
+
+### PA-034 – AI-Generated Alert Wording Experiments
+**As** Nasif  
+**I want** the AI to suggest alternative alert texts per category and tone  
+**So that** I can experiment with messages that motivate me better without rewriting them by hand.
+
+**Acceptance Criteria**
+- [x] In the Planner view (or a dedicated settings area), I can request AI wording suggestions for a given category and tone (e.g. work = neutral/firm, health = encouraging, sleep = protective).
+- [x] The AI returns several short alert text options (each within a configurable character limit).
+- [x] I can preview these options and manually select one to use for a category or template.
+- [ ] Chosen texts are stored in configuration or template fields and used by the alert system without breaking existing PA-015/PA-016 rules.
+
+---
+
+### PA-035 – Micro-Journaling and AI Summary for Skipped/Snoozed Tasks
+**As** Nasif  
+**I want** to quickly note why I skipped or snoozed tasks and have the AI summarize those reasons  
+**So that** I can see root causes (e.g. “too tired at night”) and improve my schedule.
+
+**Acceptance Criteria**
+**Acceptance Criteria**
+- [x] After I snooze or skip a task, I optionally see a tiny prompt (e.g. modal or inline) asking “Why did you skip this? (1 sentence)” which I can fill or dismiss.
+- [x] These short notes are stored in the database and linked to the corresponding schedule instance and interaction.
+- [x] On the History & Insights tab I can request an AI summary of recent skip/snooze notes for a chosen time window.
+- [x] The AI returns a small list of recurring patterns and 2–3 schedule or alert adjustments it recommends.
+- [x] The feature works even if I never enter notes (in that case, the AI call is skipped or shows a helpful message).
+
+---
+
 ## Epic 7 – Sensors & Activity Monitoring (Optional / Future)
 
 ### PA-023 – Detect Desk Presence via Sensor
@@ -422,3 +491,69 @@ PA-021 will use DeepSeek AI as the LLM provider via its HTTP API, with the API k
 
 ---
 
+## Epic 9 – Voice Interaction (Future)
+
+### PA-036 – Basic Voice Command Capture
+**As** Nasif  
+**I want** to speak a simple request into the Pi’s microphone and have the system understand it as text  
+**So that** I can interact with the assistant without using keyboard or mouse.
+
+**Acceptance Criteria**
+- [ ] A small Python process or service on the Pi can record short audio snippets from the microphone on demand (e.g. after I press a button in the UI).
+- [ ] Recorded audio is sent to a speech-to-text (STT) engine (local or cloud) and converted into text.
+- [ ] The recognized text is printed to logs and returned via an internal HTTP endpoint for debugging.
+- [ ] If STT fails, the system reports an error but the main dashboard stays responsive.
+
+---
+
+### PA-037 – Wake Word “persona”
+**As** Nasif  
+**I want** the assistant to start listening when I say a wake word like “persona”  
+**So that** I can trigger voice commands hands-free.
+
+**Acceptance Criteria**
+- [ ] A lightweight wake-word detector runs on the Pi and listens for the word “persona”.
+- [ ] When the wake word is detected, the system records the next short utterance (e.g. up to 5–10 seconds) and sends it through STT.
+- [ ] False positives and missed detections are logged but do not crash the system.
+- [ ] I can disable wake-word listening via a config flag if needed.
+
+---
+
+### PA-038 – Voice to Template Designer
+**As** Nasif  
+**I want** to say things like “persona, I want to do coding, exercise, and chores on weekdays with 45 minute focus blocks”  
+**So that** the AI-powered template designer can set up or refine my schedule from voice alone.
+
+**Acceptance Criteria**
+- [ ] After the wake word and utterance are captured and converted to text, the system forwards the text to the same AI template designer used in PA-031.
+- [ ] The AI returns suggested templates, and a short spoken summary is played through the speakers (e.g. “I suggest a 90 minute coding block in the morning and a 45 minute exercise block in the evening…”).
+- [ ] The suggested templates also appear in the Planner view so I can review and save them just like text-based suggestions.
+- [ ] If STT or AI calls fail, I hear a brief error message and nothing in the existing schedule is changed.
+
+---
+
+### PA-039 – Voice “What Should I Do Now?” Queries
+**As** Nasif  
+**I want** to ask “persona, what should I do now?” and hear a short answer  
+**So that** I can get guidance without looking at the screen.
+
+**Acceptance Criteria**
+- [ ] When I say "persona, what should I do now?", the system routes the recognized text to the same AI endpoint used in PA-032.
+- [ ] The AI returns a concise suggestion based on current schedule and history, and the response is spoken through the Pi speakers.
+- [ ] The same suggestion text is also displayed in the Today view for later reference.
+- [ ] If audio capture or AI fails, I hear a short fallback like “I couldn’t get a suggestion right now.”
+
+---
+
+### PA-040 – Spoken AI Responses for Other Coaching Prompts
+**As** Nasif  
+**I want** AI answers (e.g. weekly summaries or habit insights) to be playable as audio  
+**So that** I can absorb feedback while moving around the room.
+
+**Acceptance Criteria**
+- [ ] When the system generates AI summaries or insights (e.g. from PA-020, PA-021, PA-033, or PA-035), I can trigger a “Play summary” action.
+- [ ] The summary text is passed to a text-to-speech engine and spoken through the speakers.
+- [ ] Audio playback can be stopped or interrupted without affecting the underlying data.
+- [ ] If TTS fails, I still see the text on screen and an error is logged.
+
+---

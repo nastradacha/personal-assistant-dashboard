@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..db import get_db
+from ..services import interactions as interactions_service
+from ..services import schedule as schedule_service
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
@@ -52,15 +54,6 @@ def _get_or_create_alarm_config(db: Session) -> models.AlarmConfig:
         db.commit()
         db.refresh(cfg)
     return cfg
-
-
-def _get_latest_interaction(db: Session, instance_id: int) -> Optional[models.Interaction]:
-    return (
-        db.query(models.Interaction)
-        .filter(models.Interaction.schedule_instance_id == instance_id)
-        .order_by(models.Interaction.alert_started_at.desc(), models.Interaction.id.desc())
-        .first()
-    )
 
 
 def _update_active_instance(db: Session, today: date) -> None:
@@ -198,20 +191,7 @@ def get_today_schedule(db: Session = Depends(get_db)):
             if created_any:
                 db.commit()
 
-    cutoff = datetime.utcnow() - timedelta(minutes=10)
-    stale = (
-        db.query(models.Interaction)
-        .filter(models.Interaction.response_type.is_(None))
-        .filter(models.Interaction.alert_started_at <= cutoff)
-        .all()
-    )
-    if stale:
-        now_utc = datetime.utcnow()
-        for interaction in stale:
-            interaction.response_type = "none"
-            interaction.response_stage = "none"
-            interaction.responded_at = now_utc
-        db.commit()
+    interactions_service.close_stale_interactions(db)
 
     rows = (
         db.query(models.ScheduleInstance, models.Task)
@@ -223,25 +203,16 @@ def get_today_schedule(db: Session = Depends(get_db)):
     )
 
     now = datetime.now()
-    current_time = now.time()
     result: List[schemas.TodayScheduleItem] = []
     for instance, task in rows:
         # Derive effective status from current time for non-cancelled/non-paused tasks.
-        effective_status = instance.status
-        if effective_status not in ("cancelled", "paused"):
-            if instance.planned_start_time <= current_time < instance.planned_end_time:
-                effective_status = "active"
-            else:
-                effective_status = "pending"
+        effective_status, remaining_seconds = schedule_service.compute_effective_status_and_remaining(
+            instance=instance,
+            now=now,
+        )
 
         # Treat tasks created via /adhoc-today (enabled = False) as ad-hoc for display.
         is_adhoc = not bool(task.enabled)
-
-        remaining_seconds = None
-        if effective_status in ("active", "paused"):
-            end_dt = datetime.combine(instance.date, instance.planned_end_time)
-            delta = (end_dt - now).total_seconds()
-            remaining_seconds = max(0, int(delta))
 
         result.append(
             schemas.TodayScheduleItem(
@@ -333,6 +304,55 @@ def create_adhoc_today_task(
     )
 
 
+@router.post(
+    "/instances/{instance_id}/notes",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def create_interaction_note(
+    instance_id: int,
+    payload: schemas.InteractionNoteCreate,
+    db: Session = Depends(get_db),
+):
+    """Create a short micro-journal note linked to a schedule instance and its latest interaction.
+
+    Used for PA-035 to record optional skip/snooze reasons.
+    """
+
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="text is required",
+        )
+
+    # Keep notes short to avoid bloating storage or AI prompts.
+    if len(text) > 300:
+        text = text[:300]
+
+    note_type = (payload.note_type or "").strip().lower() or "other"
+
+    instance = (
+        db.query(models.ScheduleInstance)
+        .filter(models.ScheduleInstance.id == instance_id)
+        .first()
+    )
+    if not instance:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Schedule instance not found",
+        )
+
+    interactions_service.add_note_for_instance(
+        db=db,
+        instance=instance,
+        note_type=note_type,
+        text=text,
+    )
+
+    # 204 NO CONTENT
+    return None
+
+
 @router.put("/instances/{instance_id}", response_model=schemas.TodayScheduleItem)
 def update_schedule_instance(
     instance_id: int,
@@ -357,14 +377,12 @@ def update_schedule_instance(
             detail="Task for schedule instance not found",
         )
 
-    if update_in.planned_start_time is not None:
-        start_dt = datetime.combine(instance.date, update_in.planned_start_time)
-        end_dt = start_dt + timedelta(minutes=task.default_duration_minutes)
-        instance.planned_start_time = start_dt.time()
-        instance.planned_end_time = end_dt.time()
-
-    if update_in.status is not None:
-        instance.status = update_in.status
+    schedule_service.update_instance_time_and_status(
+        instance=instance,
+        task=task,
+        planned_start_time=update_in.planned_start_time,
+        new_status=update_in.status,
+    )
 
     db.commit()
     db.refresh(instance)
@@ -472,6 +490,61 @@ def update_alarm_config(
     return schemas.AlarmConfig(sound=cfg.sound, volume_percent=cfg.volume_percent)
 
 
+@router.get("/alert-wordings/{category}", response_model=schemas.AlertWordingConfig)
+def get_alert_wording_config(category: str, db: Session = Depends(get_db)):
+    cat_norm = (category or "").strip()
+    if not cat_norm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Category is required",
+        )
+
+    cfg = db.query(models.AlertWording).filter(models.AlertWording.category == cat_norm).first()
+    if cfg is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No alert wording configured for this category",
+        )
+
+    return schemas.AlertWordingConfig(category=cfg.category, tone=cfg.tone, text=cfg.text)
+
+
+@router.put("/alert-wordings/{category}", response_model=schemas.AlertWordingConfig)
+def upsert_alert_wording_config(
+    category: str,
+    payload: schemas.AlertWordingUpdate,
+    db: Session = Depends(get_db),
+):
+    cat_norm = (category or "").strip()
+    if not cat_norm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Category is required",
+        )
+
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Text is required",
+        )
+
+    tone = (payload.tone or "unspecified").strip() or "unspecified"
+
+    cfg = db.query(models.AlertWording).filter(models.AlertWording.category == cat_norm).first()
+    if cfg is None:
+        cfg = models.AlertWording(category=cat_norm, tone=tone, text=text)
+        db.add(cfg)
+    else:
+        cfg.tone = tone
+        cfg.text = text
+
+    db.commit()
+    db.refresh(cfg)
+
+    return schemas.AlertWordingConfig(category=cfg.category, tone=cfg.tone, text=cfg.text)
+
+
 @router.post(
     "/instances/{instance_id}/interactions/start",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -492,12 +565,7 @@ def start_interaction(
             detail="Schedule instance not found",
         )
 
-    interaction = models.Interaction(
-        schedule_instance_id=instance.id,
-        alert_type=alert_type,
-    )
-    db.add(interaction)
-    db.commit()
+    interactions_service.start_interaction(db=db, instance=instance, alert_type=alert_type)
 
 
 @router.post("/instances/{instance_id}/acknowledge", response_model=schemas.TodayScheduleItem)
@@ -526,29 +594,7 @@ def acknowledge_schedule_instance(
             detail="Task for schedule instance not found",
         )
 
-    event = models.AcknowledgeEvent(schedule_instance_id=instance.id)
-    db.add(event)
-    db.commit()
-
-    interaction = _get_latest_interaction(db, instance.id)
-    stage_value = stage or "visual"
-    now_utc = datetime.utcnow()
-    if interaction and interaction.response_type is None:
-        interaction.response_type = "acknowledge"
-        interaction.response_stage = stage_value
-        interaction.responded_at = now_utc
-        db.commit()
-    elif interaction is None:
-        interaction = models.Interaction(
-            schedule_instance_id=instance.id,
-            alert_type="task_start",
-            alert_started_at=now_utc,
-            response_type="acknowledge",
-            response_stage=stage_value,
-            responded_at=now_utc,
-        )
-        db.add(interaction)
-        db.commit()
+    interactions_service.record_acknowledge(db=db, instance=instance, stage=stage)
 
     remaining_seconds = None
     if instance.status in ("active", "paused"):
@@ -603,39 +649,20 @@ def snooze_schedule_instance(
             detail="Task for schedule instance not found",
         )
 
-    end_dt = datetime.combine(instance.date, instance.planned_end_time)
-    end_dt = end_dt + timedelta(minutes=snooze_in.minutes)
-    instance.planned_end_time = end_dt.time()
-
-    # Log snooze event
-    event = models.SnoozeEvent(
-        schedule_instance_id=instance.id,
+    schedule_service.snooze_instance(
+        instance=instance,
         minutes=snooze_in.minutes,
     )
-    db.add(event)
 
     db.commit()
     db.refresh(instance)
 
-    interaction = _get_latest_interaction(db, instance.id)
-    stage_value = stage or "visual"
-    now_utc = datetime.utcnow()
-    if interaction and interaction.response_type is None:
-        interaction.response_type = "snooze"
-        interaction.response_stage = stage_value
-        interaction.responded_at = now_utc
-        db.commit()
-    elif interaction is None:
-        interaction = models.Interaction(
-            schedule_instance_id=instance.id,
-            alert_type="task_start",
-            alert_started_at=now_utc,
-            response_type="snooze",
-            response_stage=stage_value,
-            responded_at=now_utc,
-        )
-        db.add(interaction)
-        db.commit()
+    interactions_service.record_snooze(
+        db=db,
+        instance=instance,
+        minutes=snooze_in.minutes,
+        stage=stage,
+    )
 
     remaining_seconds = None
     if instance.status in ("active", "paused"):

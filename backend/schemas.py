@@ -79,6 +79,24 @@ class AlarmConfigUpdate(BaseModel):
     volume_percent: Optional[int] = None
 
 
+class InteractionNoteCreate(BaseModel):
+    note_type: str
+    text: str
+
+
+class AlertWordingConfig(BaseModel):
+    category: str
+    tone: str
+    text: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertWordingUpdate(BaseModel):
+    tone: Optional[str] = None
+    text: Optional[str] = None
+
+
 class InteractionHistoryItem(BaseModel):
     id: int
     schedule_instance_id: int

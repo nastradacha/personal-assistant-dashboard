@@ -84,6 +84,15 @@ class AlarmConfig(Base):
     volume_percent = Column(Integer, nullable=False, default=12)
 
 
+class AlertWording(Base):
+    __tablename__ = "alert_wordings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String, nullable=False, index=True)
+    tone = Column(String, nullable=False)
+    text = Column(String, nullable=False)
+
+
 class Interaction(Base):
     __tablename__ = "interactions"
 
@@ -101,3 +110,27 @@ class Interaction(Base):
     responded_at = Column(DateTime, nullable=True)
 
     schedule_instance = relationship("ScheduleInstance", back_populates="interactions")
+
+
+class InteractionNote(Base):
+    __tablename__ = "interaction_notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    schedule_instance_id = Column(
+        Integer,
+        ForeignKey("schedule_instances.id"),
+        nullable=False,
+        index=True,
+    )
+    interaction_id = Column(
+        Integer,
+        ForeignKey("interactions.id"),
+        nullable=True,
+        index=True,
+    )
+    note_type = Column(String, nullable=False)
+    text = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    schedule_instance = relationship("ScheduleInstance")
+    interaction = relationship("Interaction")
