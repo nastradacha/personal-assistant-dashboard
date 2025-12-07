@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, date, timedelta
 from typing import List, Optional
 
@@ -14,6 +15,22 @@ from .schedule import get_today_schedule, get_recent_interactions
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+
+def _parse_bool_env(value: Optional[str], default: bool) -> bool:
+    if value is None:
+        return default
+    s = value.strip().lower()
+    if not s:
+        return default
+    if s in {"0", "false", "no", "off"}:
+        return False
+    if s in {"1", "true", "yes", "on"}:
+        return True
+    return default
+
+
+TTS_ENABLED = _parse_bool_env(os.getenv("TTS_ENABLED"), True)
 
 
 class TemplateSuggestion(BaseModel):
@@ -396,6 +413,12 @@ async def get_notes_summary(
 @router.post("/tts/play", status_code=204)
 async def play_tts(payload: TTSPlayRequest) -> None:
     """Play short coaching text as audio via local TTS on the Pi (PA-040)."""
+
+    if not TTS_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Text-to-speech is disabled by configuration.",
+        )
 
     text = (payload.text or "").strip()
     if not text:

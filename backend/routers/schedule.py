@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -44,6 +44,99 @@ def _task_applies_today(task: models.Task, today: date) -> bool:
 
     # Fallback: treat unrecognized patterns as "daily" for now
     return True
+
+
+def _parse_preferred_window(raw: Optional[str]) -> Optional[Tuple[time, time]]:
+    """Parse a preferred_time_window like '07:00-11:00' into (start, end).
+
+    Only the first token is considered, so strings like '07:00-11:00 or evenings'
+    will use the '07:00-11:00' portion. Returns None when parsing fails.
+    """
+
+    if not raw:
+        return None
+    s = (raw or "").strip()
+    if not s:
+        return None
+
+    token = s.split()[0]
+    token = token.replace("\u2013", "-")  # tolerate en dash
+    parts = [p.strip() for p in token.split("-") if p.strip()]
+    if len(parts) != 2:
+        return None
+
+    def _parse_part(part: str) -> Optional[time]:
+        try:
+            # Accept '7:00' or '07:00' style inputs.
+            return datetime.strptime(part, "%H:%M").time()
+        except ValueError:
+            return None
+
+    start_t = _parse_part(parts[0])
+    end_t = _parse_part(parts[1])
+    if start_t is None or end_t is None:
+        return None
+    if start_t >= end_t:
+        return None
+    return start_t, end_t
+
+
+def _find_slot_in_window(
+    today: date,
+    duration_minutes: int,
+    window: Tuple[time, time],
+    instances: List[models.ScheduleInstance],
+) -> Optional[time]:
+    """Find earliest free slot of given duration fully inside the window.
+
+    The slot must not overlap any existing instances in ``instances`` for ``today``.
+    Returns a planned_start_time or None if no slot fits.
+    """
+
+    if duration_minutes <= 0:
+        return None
+
+    window_start_t, window_end_t = window
+    window_start_dt = datetime.combine(today, window_start_t)
+    window_end_dt = datetime.combine(today, window_end_t)
+    if window_start_dt >= window_end_dt:
+        return None
+
+    duration = timedelta(minutes=duration_minutes)
+
+    intervals: List[Tuple[datetime, datetime]] = []
+    for inst in instances:
+        if inst.date != today:
+            continue
+        start_dt = datetime.combine(today, inst.planned_start_time)
+        end_dt = datetime.combine(today, inst.planned_end_time)
+        intervals.append((start_dt, end_dt))
+
+    intervals.sort(key=lambda pair: pair[0])
+
+    candidate = window_start_dt
+    for start_dt, end_dt in intervals:
+        if end_dt <= window_start_dt:
+            # This interval ends before the window starts; ignore.
+            continue
+        if start_dt >= window_end_dt:
+            # This and all subsequent intervals start after the window.
+            break
+
+        # Is there a gap before this interval?
+        if candidate + duration <= start_dt and candidate + duration <= window_end_dt:
+            return candidate.time()
+
+        # Move candidate past this interval if it overlaps.
+        if candidate < end_dt:
+            candidate = end_dt
+        if candidate >= window_end_dt:
+            break
+
+    # After all intervals, there may still be room at the end of the window.
+    if candidate + duration <= window_end_dt:
+        return candidate.time()
+    return None
 
 
 def _get_or_create_alarm_config(db: Session) -> models.AlarmConfig:
@@ -129,23 +222,46 @@ def get_today_schedule(db: Session = Depends(get_db)):
 
         start_time = time(hour=9, minute=0)
         cursor = datetime.combine(today, start_time)
+        instances_for_today: List[models.ScheduleInstance] = []
 
         for task in tasks:
             if not _task_applies_today(task, today):
                 continue
 
-            planned_start = cursor.time()
-            planned_end = (cursor + timedelta(minutes=task.default_duration_minutes)).time()
+            window = _parse_preferred_window(task.preferred_time_window)
+            planned_start: Optional[time] = None
+
+            if window is not None:
+                slot = _find_slot_in_window(
+                    today=today,
+                    duration_minutes=task.default_duration_minutes,
+                    window=window,
+                    instances=instances_for_today,
+                )
+                if slot is not None:
+                    planned_start = slot
+
+            if planned_start is None:
+                # If there was a preferred window but no room, skip scheduling this
+                # template for today instead of placing it outside the window.
+                if window is not None:
+                    continue
+
+                planned_start = cursor.time()
+                cursor = cursor + timedelta(minutes=task.default_duration_minutes)
+
+            start_dt = datetime.combine(today, planned_start)
+            end_dt = start_dt + timedelta(minutes=task.default_duration_minutes)
 
             instance = models.ScheduleInstance(
                 task_id=task.id,
                 date=today,
                 planned_start_time=planned_start,
-                planned_end_time=planned_end,
+                planned_end_time=end_dt.time(),
                 status="pending",
             )
             db.add(instance)
-            cursor += timedelta(minutes=task.default_duration_minutes)
+            instances_for_today.append(instance)
 
         db.commit()
     else:
@@ -167,6 +283,7 @@ def get_today_schedule(db: Session = Depends(get_db)):
             else:
                 cursor = datetime.combine(today, time(hour=9, minute=0))
 
+            instances_for_today: List[models.ScheduleInstance] = list(existing)
             created_any = False
             for task in tasks:
                 if not _task_applies_today(task, today):
@@ -174,18 +291,40 @@ def get_today_schedule(db: Session = Depends(get_db)):
                 if task.id in existing_task_ids:
                     continue
 
-                planned_start = cursor.time()
-                planned_end = (cursor + timedelta(minutes=task.default_duration_minutes)).time()
+                window = _parse_preferred_window(task.preferred_time_window)
+                planned_start: Optional[time] = None
+
+                if window is not None:
+                    slot = _find_slot_in_window(
+                        today=today,
+                        duration_minutes=task.default_duration_minutes,
+                        window=window,
+                        instances=instances_for_today,
+                    )
+                    if slot is not None:
+                        planned_start = slot
+
+                if planned_start is None:
+                    # If there was a preferred window but no room, skip scheduling this
+                    # template for today instead of placing it outside the window.
+                    if window is not None:
+                        continue
+
+                    planned_start = cursor.time()
+                    cursor = cursor + timedelta(minutes=task.default_duration_minutes)
+
+                start_dt = datetime.combine(today, planned_start)
+                end_dt = start_dt + timedelta(minutes=task.default_duration_minutes)
 
                 instance = models.ScheduleInstance(
                     task_id=task.id,
                     date=today,
                     planned_start_time=planned_start,
-                    planned_end_time=planned_end,
+                    planned_end_time=end_dt.time(),
                     status="pending",
                 )
                 db.add(instance)
-                cursor += timedelta(minutes=task.default_duration_minutes)
+                instances_for_today.append(instance)
                 created_any = True
 
             if created_any:

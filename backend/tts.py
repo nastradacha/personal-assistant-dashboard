@@ -1,7 +1,6 @@
 import os
-import shlex
+import hashlib
 import subprocess
-import tempfile
 from typing import Optional
 
 from google.cloud import texttospeech
@@ -10,6 +9,8 @@ from google.cloud import texttospeech
 TTS_LANGUAGE = os.getenv("TTS_LANGUAGE", "en-US")
 TTS_VOICE = os.getenv("TTS_VOICE", "en-US-Standard-C")
 TTS_PLAYER_COMMAND = os.getenv("TTS_PLAYER_COMMAND", "aplay")
+TTS_CACHE_DIR = os.getenv("TTS_CACHE_DIR", "tts_cache")
+TTS_CACHE_MAX_FILES = int(os.getenv("TTS_CACHE_MAX_FILES", "500"))
 
 _tts_client: Optional[texttospeech.TextToSpeechClient] = None
 
@@ -19,6 +20,62 @@ def _get_tts_client() -> texttospeech.TextToSpeechClient:
     if _tts_client is None:
         _tts_client = texttospeech.TextToSpeechClient()
     return _tts_client
+
+
+def _ensure_cache_dir() -> str:
+    path = TTS_CACHE_DIR or "tts_cache"
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _cache_key(text: str) -> str:
+    key_source = f"v1|{TTS_LANGUAGE}|{TTS_VOICE}|{text}"
+    return hashlib.sha256(key_source.encode("utf-8")).hexdigest()
+
+
+def _cache_path_for_text(text: str) -> str:
+    cache_dir = _ensure_cache_dir()
+    filename = f"{_cache_key(text)}.wav"
+    return os.path.join(cache_dir, filename)
+
+
+def _play_audio_file(path: str) -> None:
+    player_cmd = (TTS_PLAYER_COMMAND or "").strip()
+    if not player_cmd:
+        raise RuntimeError("TTS audio player command is not configured")
+    try:
+        subprocess.Popen(  # noqa: S603,S607
+            [player_cmd, path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"TTS playback failed: {exc}") from exc
+
+
+def _prune_cache_if_needed() -> None:
+    try:
+        cache_dir = _ensure_cache_dir()
+        entries = [
+            os.path.join(cache_dir, name)
+            for name in os.listdir(cache_dir)
+            if name.lower().endswith(".wav")
+        ]
+        max_files = TTS_CACHE_MAX_FILES if TTS_CACHE_MAX_FILES > 0 else 0
+        if max_files <= 0:
+            return
+        if len(entries) <= max_files:
+            return
+        entries.sort(key=lambda p: os.path.getmtime(p))
+        to_delete = entries[0 : len(entries) - max_files]
+        for path in to_delete:
+            try:
+                os.remove(path)
+            except OSError:
+                continue
+    except Exception:
+        # Cache pruning should never break TTS playback.
+        return
 
 
 def play_text(text: Optional[str]) -> None:
@@ -34,9 +91,10 @@ def play_text(text: Optional[str]) -> None:
     if not text:
         return
 
-    player_cmd = (TTS_PLAYER_COMMAND or "").strip()
-    if not player_cmd:
-        raise RuntimeError("TTS audio player command is not configured")
+    cache_path = _cache_path_for_text(text)
+    if os.path.exists(cache_path):
+        _play_audio_file(cache_path)
+        return
 
     client = _get_tts_client()
 
@@ -54,6 +112,7 @@ def play_text(text: Optional[str]) -> None:
 
     audio_config = texttospeech.AudioConfig(
         audio_encoding=texttospeech.AudioEncoding.LINEAR16,
+        sample_rate_hertz=16000,
     )
 
     response = client.synthesize_speech(
@@ -66,20 +125,19 @@ def play_text(text: Optional[str]) -> None:
     if not audio_content:
         raise RuntimeError("TTS synthesis returned empty audio content")
 
-    fd, tmp_path = tempfile.mkstemp(suffix=".wav")
+    cache_dir = _ensure_cache_dir()
+    tmp_path = os.path.join(cache_dir, f".tmp_{_cache_key(text)}.wav")
     try:
-        with os.fdopen(fd, "wb") as f:
+        with open(tmp_path, "wb") as f:
             f.write(audio_content)
-
-        # Use a small shell wrapper so we can delete the temp file after playback
-        quoted_cmd = player_cmd
-        quoted_path = shlex.quote(tmp_path)
-        shell_cmd = f"{quoted_cmd} {quoted_path} >/dev/null 2>&1; rm -f {quoted_path}"
-
-        subprocess.Popen(  # noqa: S603,S607
-            ["/bin/sh", "-c", shell_cmd],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        os.replace(tmp_path, cache_path)
+        _play_audio_file(cache_path)
+        _prune_cache_if_needed()
     except Exception as exc:  # noqa: BLE001
+        # Best effort to clean up temp file on errors.
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
         raise RuntimeError(f"TTS playback failed: {exc}") from exc
