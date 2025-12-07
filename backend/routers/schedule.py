@@ -47,10 +47,13 @@ def _task_applies_today(task: models.Task, today: date) -> bool:
 
 
 def _parse_preferred_window(raw: Optional[str]) -> Optional[Tuple[time, time]]:
-    """Parse a preferred_time_window like '07:00-11:00' into (start, end).
+    """Parse a preferred_time_window string into (start, end).
 
-    Only the first token is considered, so strings like '07:00-11:00 or evenings'
-    will use the '07:00-11:00' portion. Returns None when parsing fails.
+    Supports common variants such as:
+    - "07:00-11:00"
+    - "07:00 - 11:00"
+    - "1:17 pm - 1:20 pm"
+    - "07:00-11:00 or evenings" (trailing text is ignored)
     """
 
     if not raw:
@@ -59,21 +62,48 @@ def _parse_preferred_window(raw: Optional[str]) -> Optional[Tuple[time, time]]:
     if not s:
         return None
 
-    token = s.split()[0]
-    token = token.replace("\u2013", "-")  # tolerate en dash
-    parts = [p.strip() for p in token.split("-") if p.strip()]
-    if len(parts) != 2:
+    # Normalize dashes and split on the first '-'
+    s = s.replace("\u2013", "-")
+    dash_index = s.find("-")
+    if dash_index == -1:
+        return None
+
+    left = s[:dash_index].strip()
+    right = s[dash_index + 1 :].strip()
+    if not left or not right:
         return None
 
     def _parse_part(part: str) -> Optional[time]:
-        try:
-            # Accept '7:00' or '07:00' style inputs.
-            return datetime.strptime(part, "%H:%M").time()
-        except ValueError:
+        p = (part or "").strip().lower()
+        if not p:
             return None
 
-    start_t = _parse_part(parts[0])
-    end_t = _parse_part(parts[1])
+        # Keep only the first couple of tokens to drop trailing notes like "or evenings".
+        tokens = p.split()
+        if not tokens:
+            return None
+        candidate = " ".join(tokens[:2])
+
+        # Try 12-hour clocks with am/pm markers first.
+        if "am" in candidate or "pm" in candidate:
+            for fmt in ("%I:%M %p", "%I %p", "%I:%M%p", "%I%p"):
+                try:
+                    return datetime.strptime(candidate, fmt).time()
+                except ValueError:
+                    continue
+
+        # Fallback to 24-hour style like '7:00' or '07:00' or just '7'.
+        base = tokens[0]
+        for fmt in ("%H:%M", "%H"):
+            try:
+                return datetime.strptime(base, fmt).time()
+            except ValueError:
+                continue
+
+        return None
+
+    start_t = _parse_part(left)
+    end_t = _parse_part(right)
     if start_t is None or end_t is None:
         return None
     if start_t >= end_t:
