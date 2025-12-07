@@ -835,6 +835,9 @@ window.initTodayView = function initTodayView() {
 
         async function loadSchedule() {
             if (!scheduleListEl) return;
+            if (editingTaskId !== null) {
+                return;
+            }
             try {
                 const res = await fetch('/schedule/today');
                 if (!res.ok) throw new Error('Failed to load schedule');
@@ -959,6 +962,15 @@ window.initTodayView = function initTodayView() {
                 if (start) {
                     timeInput.value = start;
                 }
+
+                timeInput.addEventListener('focus', () => {
+                    editingTaskId = item.id;
+                });
+                timeInput.addEventListener('blur', () => {
+                    if (editingTaskId === item.id) {
+                        editingTaskId = null;
+                    }
+                });
 
                 const saveBtn = document.createElement('button');
                 saveBtn.type = 'button';
@@ -1092,6 +1104,9 @@ window.initTodayView = function initTodayView() {
                         }
                         scheduleStatusEl.textContent = 'Schedule updated.';
                         scheduleStatusEl.className = 'status-text ok';
+                        if (editingTaskId === item.id) {
+                            editingTaskId = null;
+                        }
                         await loadSchedule();
                     } catch (err) {
                         console.error(err);
