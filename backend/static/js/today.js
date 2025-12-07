@@ -80,7 +80,7 @@ window.initTodayView = function initTodayView() {
         let lastAlertedInstanceId = null;
         let alarmConfig = { sound: 'beep', volume_percent: 12 };
         // PA-010: audio alarm escalation after visual alert
-        const ALERT_ESCALATION_DELAY_MS = 5000; // configurable (e.g. 60-120s)
+        const ALERT_ESCALATION_DELAY_MS = 60000; // configurable (e.g. 60-120s)
         let alarmEscalationTimeoutId = null;
         let alarmAudioContext = null;
         let alarmOscillator = null;
@@ -522,6 +522,34 @@ window.initTodayView = function initTodayView() {
             stopAlarm();
         }
 
+        function buildAlertTtsText(item) {
+            if (!item) return '';
+            const name = item.task_name || 'your task';
+            const start = (item.planned_start_time || '').slice(0, 5);
+            const end = (item.planned_end_time || '').slice(0, 5);
+            if (start && end) {
+                return `Time to switch: ${name}, ${start} to ${end}.`;
+            }
+            if (start) {
+                return `Time to switch: ${name}, starting at ${start}.`;
+            }
+            return `Time to switch: ${name}.`;
+        }
+
+        async function announceAlertItem(item) {
+            const text = buildAlertTtsText(item);
+            if (!text) return;
+            try {
+                await fetch('/ai/tts/play', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text }),
+                });
+            } catch (err) {
+                console.error('TTS alert announcement failed', err);
+            }
+        }
+
         function showAlertForItem(item) {
             if (!alertOverlay) return;
             lastAlertedInstanceId = item.id;
@@ -544,6 +572,7 @@ window.initTodayView = function initTodayView() {
             } catch (e) {
                 console.error('Failed to start interaction log', e);
             }
+            announceAlertItem(item);
             startAlarmAfterDelay();
         }
 
