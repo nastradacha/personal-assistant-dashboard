@@ -81,6 +81,13 @@ window.initTodayView = function initTodayView() {
         let alarmConfig = { sound: 'beep', volume_percent: 12 };
         // PA-010: audio alarm escalation after visual alert
         const ALERT_ESCALATION_DELAY_MS = 60000; // configurable (e.g. 60-120s)
+        const ALERT_TTS_MAX_REPEATS = 10;
+        const ALERT_TTS_INTERVAL_MS = Math.max(
+            3000,
+            Math.floor(ALERT_ESCALATION_DELAY_MS / ALERT_TTS_MAX_REPEATS),
+        );
+        let alertTtsIntervalId = null;
+        let alertTtsRepeatCount = 0;
         let alarmEscalationTimeoutId = null;
         let alarmAudioContext = null;
         let alarmOscillator = null;
@@ -447,7 +454,16 @@ window.initTodayView = function initTodayView() {
             }
         }
 
+        function stopAlertTtsLoop() {
+            if (alertTtsIntervalId !== null) {
+                clearInterval(alertTtsIntervalId);
+                alertTtsIntervalId = null;
+            }
+            alertTtsRepeatCount = 0;
+        }
+
         function stopAlarm() {
+            stopAlertTtsLoop();
             if (alarmEscalationTimeoutId !== null) {
                 clearTimeout(alarmEscalationTimeoutId);
                 alarmEscalationTimeoutId = null;
@@ -550,6 +566,28 @@ window.initTodayView = function initTodayView() {
             }
         }
 
+        function startAlertTtsLoop(item) {
+            if (!item) return;
+            stopAlertTtsLoop();
+            alertTtsRepeatCount = 0;
+
+            const interval =
+                typeof ALERT_TTS_INTERVAL_MS === 'number' && ALERT_TTS_INTERVAL_MS > 0
+                    ? ALERT_TTS_INTERVAL_MS
+                    : 5000;
+
+            const playOnce = () => {
+                alertTtsRepeatCount += 1;
+                announceAlertItem(item);
+                if (alertTtsRepeatCount >= ALERT_TTS_MAX_REPEATS) {
+                    stopAlertTtsLoop();
+                }
+            };
+
+            playOnce();
+            alertTtsIntervalId = setInterval(playOnce, interval);
+        }
+
         function showAlertForItem(item) {
             if (!alertOverlay) return;
             lastAlertedInstanceId = item.id;
@@ -572,7 +610,7 @@ window.initTodayView = function initTodayView() {
             } catch (e) {
                 console.error('Failed to start interaction log', e);
             }
-            announceAlertItem(item);
+            startAlertTtsLoop(item);
             startAlarmAfterDelay();
         }
 
