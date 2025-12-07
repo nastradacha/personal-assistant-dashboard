@@ -20,6 +20,21 @@ window.initAIHelpers = function initAIHelpers() {
         let lastNotesPatterns = [];
         let lastNotesRecs = [];
 
+        const TTS_MAX_TEXT_CHARS = 1000;
+
+        function clampTtsText(text, maxChars) {
+            if (!text) return '';
+            const s = String(text);
+            if (!maxChars || maxChars <= 0) return s;
+            if (s.length <= maxChars) return s;
+            const slice = s.slice(0, maxChars);
+            const lastSpace = slice.lastIndexOf(' ');
+            if (lastSpace > 20) {
+                return slice.slice(0, lastSpace).trim();
+            }
+            return slice.trim();
+        }
+
         if (aiNowBtn && aiNowSuggestionEl) {
             aiNowBtn.addEventListener('click', async () => {
                 aiNowSuggestionEl.textContent = 'Asking AI for a quick suggestion…';
@@ -257,7 +272,7 @@ window.initAIHelpers = function initAIHelpers() {
                     }
                 }
 
-                const text = parts.join(' ');
+                const text = clampTtsText(parts.join(' '), TTS_MAX_TEXT_CHARS);
                 if (!text.trim()) return;
 
                 aiHistoryStatusEl.textContent = 'Preparing audio summary…';
@@ -311,7 +326,7 @@ window.initAIHelpers = function initAIHelpers() {
                     }
                 }
 
-                const text = parts.join(' ');
+                const text = clampTtsText(parts.join(' '), TTS_MAX_TEXT_CHARS);
                 if (!text.trim()) return;
 
                 aiNotesStatusEl.textContent = 'Preparing notes summary audio…';

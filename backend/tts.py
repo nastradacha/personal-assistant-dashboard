@@ -2,6 +2,7 @@ import os
 import hashlib
 import subprocess
 import shlex
+import logging
 from typing import Optional
 
 from google.cloud import texttospeech
@@ -12,6 +13,10 @@ TTS_VOICE = os.getenv("TTS_VOICE", "en-US-Standard-C")
 TTS_PLAYER_COMMAND = os.getenv("TTS_PLAYER_COMMAND", "aplay")
 TTS_CACHE_DIR = os.getenv("TTS_CACHE_DIR", "tts_cache")
 TTS_CACHE_MAX_FILES = int(os.getenv("TTS_CACHE_MAX_FILES", "500"))
+_TTS_TIMEOUT_SECONDS = float(os.getenv("TTS_TIMEOUT_SECONDS", "10.0"))
+TTS_MAX_TEXT_CHARS = int(os.getenv("TTS_MAX_TEXT_CHARS", "1000"))
+
+logger = logging.getLogger(__name__)
 
 _tts_client: Optional[texttospeech.TextToSpeechClient] = None
 
@@ -95,6 +100,22 @@ def play_text(text: Optional[str]) -> None:
     if not text:
         return
 
+    # Enforce a maximum text length for privacy and to keep requests short.
+    max_chars = TTS_MAX_TEXT_CHARS if TTS_MAX_TEXT_CHARS > 0 else 0
+    if max_chars and len(text) > max_chars:
+        original_len = len(text)
+        slice_ = text[:max_chars]
+        # Try to avoid cutting in the middle of a word.
+        last_space = slice_.rfind(" ")
+        if last_space > 0:
+            slice_ = slice_[:last_space]
+        text = slice_.strip()
+        logger.debug(
+            "TTS text truncated from %d to %d characters", original_len, len(text)
+        )
+        if not text:
+            return
+
     cache_path = _cache_path_for_text(text)
     if os.path.exists(cache_path):
         _play_audio_file(cache_path)
@@ -119,11 +140,16 @@ def play_text(text: Optional[str]) -> None:
         sample_rate_hertz=16000,
     )
 
-    response = client.synthesize_speech(
-        input=synthesis_input,
-        voice=voice,
-        audio_config=audio_config,
-    )
+    try:
+        response = client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice,
+            audio_config=audio_config,
+            timeout=_TTS_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Google TTS synthesize_speech failed")
+        raise RuntimeError("Google TTS request failed") from exc
 
     audio_content = response.audio_content
     if not audio_content:
