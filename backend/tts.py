@@ -1,6 +1,7 @@
 import os
 import hashlib
 import subprocess
+import shlex
 from typing import Optional
 
 from google.cloud import texttospeech
@@ -40,12 +41,15 @@ def _cache_path_for_text(text: str) -> str:
 
 
 def _play_audio_file(path: str) -> None:
-    player_cmd = (TTS_PLAYER_COMMAND or "").strip()
-    if not player_cmd:
+    player_cmd_raw = (TTS_PLAYER_COMMAND or "").strip()
+    if not player_cmd_raw:
         raise RuntimeError("TTS audio player command is not configured")
     try:
+        parts = shlex.split(player_cmd_raw)
+        if not parts:
+            raise RuntimeError("TTS audio player command is not configured")
         subprocess.Popen(  # noqa: S603,S607
-            [player_cmd, path],
+            parts + [path],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
