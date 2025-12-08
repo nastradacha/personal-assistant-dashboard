@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import datetime, date, timedelta
 from typing import List, Optional
@@ -12,6 +13,9 @@ from ..db import get_db
 from ..services import ai as ai_service
 from ..tts import play_text
 from .schedule import get_today_schedule, get_recent_interactions
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -427,6 +431,11 @@ async def play_tts(payload: TTSPlayRequest) -> None:
     try:
         play_text(text)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"TTS playback failed: {exc}") from exc
+        # Log full details server-side, but return a short generic message to the client.
+        logger.exception("TTS playback failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Text-to-speech playback failed on the server.",
+        ) from exc
 
     return None

@@ -5,6 +5,8 @@
 **Charter**  
 A daily rituals coach that lives on the Pi, shows a calm "Now & Next" view, nudges you with smart alerts, and once in a while gives you a short, helpful reflection.
 
+**Status (Dec 2025):** Core refactor stories (R1–R5), the Today micro-journal and AI polish stories (P1–P3), and TTS-001–TTS-006 are implemented in code. This document now serves as the product/architecture reference and backlog for future tweaks.
+
 From this, we anchor on three core modes. Everything else should support these.
 
 ### Mode 1: Today (Now & Next) – Hero Screen

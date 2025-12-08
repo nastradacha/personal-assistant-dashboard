@@ -2,6 +2,8 @@
 
 This document captures user stories and implementation notes for wiring the dashboard to **Google Cloud Text-to-Speech (TTS)** with lightweight caching, optimized for a Raspberry Pi 4 host.
 
+**Status (Dec 2025):** TTS-001 through TTS-006 are implemented in the app; this document remains the design and reference for how TTS is wired and configured.
+
 Assumptions:
 - Backend is FastAPI (`/ai/tts/play` endpoint already exists).
 - Host environment is a Raspberry Pi 4 (low CPU, limited SD card writes).
